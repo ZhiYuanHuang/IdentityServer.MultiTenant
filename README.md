@@ -1,0 +1,2 @@
+# IdentityServer.MultiTenant
+多租户独立数据库模式的identityserver
