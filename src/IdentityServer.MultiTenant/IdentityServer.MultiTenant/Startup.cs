@@ -16,6 +16,7 @@ using IdentityServer.MultiTenant.TenantStore;
 using IdentityServer4.AccessTokenValidation;
 using IdentityServer4.Services;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -29,6 +30,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant
 {
@@ -190,13 +192,22 @@ namespace IdentityServer.MultiTenant
                 options.DefaultPolicy = new AuthorizationPolicyBuilder("Bearer")
                 .RequireAuthenticatedUser().Build();
 
+                //options.AddPolicy("sysManagePolicy", builder => {
+
+                //    builder.AddAuthenticationSchemes("Bearer");
+                //    builder.RequireAuthenticatedUser();
+                //    builder.RequireClaim("aud", "idsmul");
+                //    builder.RequireScope("idsmul.manage");
+
+                //});
+
                 options.AddPolicy("sysManagePolicy", builder => {
-                    
-                    builder.AddAuthenticationSchemes("Bearer");
+
+                    builder.AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme);
                     builder.RequireAuthenticatedUser();
                     builder.RequireClaim("aud", "idsmul");
                     builder.RequireScope("idsmul.manage");
-                    
+
                 });
 
                 options.AddPolicy("manageTenantPolicy", builder => {
@@ -215,14 +226,29 @@ namespace IdentityServer.MultiTenant
                 //});
             });
 
-            services.AddAuthentication("Bearer")
-                .AddIdentityServerAuthentication(options => {
+            //services.AddAuthentication("Bearer")
+            //    .AddIdentityServerAuthentication(options => {
+            //        string publishHost = Configuration.GetValue<string>("PublishHost");
+            //        int publishPort = Configuration.GetValue<int>("PublishPort");
+            //        options.Authority = $"http://{publishHost}:{publishPort}";// "http://localhost:5000";
+            //        options.RequireHttpsMetadata = false;
+                    
+            //    })
+            //    ;
+
+            services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+                .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, opts => {
+                    opts.AccessDeniedPath = "/Account/Login";
+                    opts.Cookie.HttpOnly = true;
+                    opts.LoginPath = "/Account/Login";
+                    opts.Cookie.Name = "idsmul_token";
+                })
+                .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, opts => {
+                    opts.RequireHttpsMetadata = false;
                     string publishHost = Configuration.GetValue<string>("PublishHost");
                     int publishPort = Configuration.GetValue<int>("PublishPort");
-                    options.Authority = $"http://{publishHost}:{publishPort}";// "http://localhost:5000";
-                    options.RequireHttpsMetadata = false;
-                })
-                ;
+                    opts.Authority = $"http://{publishHost}:{publishPort}";// "http://localhost:5000";
+                });
 
             services.AddCors(options => {
                 options.AddPolicy("default", policy => {
