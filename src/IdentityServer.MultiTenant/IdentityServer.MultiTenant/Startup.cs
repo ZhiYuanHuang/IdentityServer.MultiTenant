@@ -120,6 +120,8 @@ namespace IdentityServer.MultiTenant
                 // see https://identityserver4.readthedocs.io/en/latest/topics/resources.html
                 options.EmitStaticAudienceClaim = true;
                 options.InputLengthRestrictions.Scope = 2000;
+
+                
             })
                 //.AddInMemoryIdentityResources(Config.IdentityResources)
                 //.AddInMemoryApiScopes(Config.ApiScopes)
@@ -189,10 +191,12 @@ namespace IdentityServer.MultiTenant
                 .RequireAuthenticatedUser().Build();
 
                 options.AddPolicy("sysManagePolicy", builder => {
+                    
                     builder.AddAuthenticationSchemes("Bearer");
                     builder.RequireAuthenticatedUser();
                     builder.RequireClaim("aud", "idsmul");
                     builder.RequireScope("idsmul.manage");
+                    
                 });
 
                 options.AddPolicy("manageTenantPolicy", builder => {
@@ -201,6 +205,8 @@ namespace IdentityServer.MultiTenant
                     builder.RequireClaim("aud", "idsmul");
                     builder.RequireScope("idsmul.addtenant");
                 });
+
+
                 //("sysPolicy", builder => {
                 //    builder.AddAuthenticationSchemes("Bearer");
                 //    builder.RequireAuthenticatedUser();
@@ -248,7 +254,7 @@ namespace IdentityServer.MultiTenant
             }
 
             // uncomment if you want to add MVC
-            //app.UseStaticFiles();
+            app.UseStaticFiles();
             //app.UseRouting();
 
             app.UseRouting();
