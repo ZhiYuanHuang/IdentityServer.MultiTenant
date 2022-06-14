@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace IdentityServer.MultiTenant.Quickstart
 {
+    [Route("{__tenant__=}/{controller=Home}/{action=Index}")]
     [Authorize(Policy = "sysManagePolicy")]
     public class ManagementController : mvc.Controller
     {

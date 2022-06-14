@@ -49,10 +49,7 @@ namespace IdentityServer.MultiTenant
         {
             // uncomment, if you want to add an MVC-based UI
             //services.AddControllersWithViews();
-            services.AddControllersWithViews(options => {
-                options.Filters.Add<GlobalExceptionFilter>();
-            });
-
+            
             services.AddDistributedMemoryCache();
 
             var migrationsAssembly = typeof(Startup).GetTypeInfo().Assembly.GetName().Name;
@@ -62,14 +59,15 @@ namespace IdentityServer.MultiTenant
             var sysIdsConnStr = Configuration.GetConnectionString("SysIdsConnection");
 
             services.AddMultiTenant<ExtendTenantInfo>()
-                .WithStrategy<ExHostStrategy>(ServiceLifetime.Singleton, "__tenant__.*")  //$"__tenant__.{publishHost}"
-                                                                                          //.WithConfigurationStore()
-                                                                                          //.WithStore
                 .WithStore<IdsMulTenantStoreV1<ExtendTenantInfo>>(ServiceLifetime.Scoped, (provider) => {
                     var cache = provider.GetRequiredService<IDistributedCache>();
                     var tenantRepo = provider.GetRequiredService<TenantRepository>();
                     return new IdsMulTenantStoreV1<ExtendTenantInfo>(tenantRepo, provider.GetRequiredService<ContextSystem>(), sysIdsConnStr, cache, MulTenantConstants.TenantToken, TimeSpan.FromSeconds(3));
                 })
+                .WithStrategy<ExHostStrategy>(ServiceLifetime.Singleton, "__tenant__.*")  //$"__tenant__.{publishHost}"
+                                                                                          //.WithConfigurationStore()
+                                                                                          //.WithStore
+                .WithRouteStrategy()
                 //.WithInMemoryStore(options => { 
                 //     options.IsCaseSensitive = true;
                 //    options.Tenants.Add(new ExtendTenantInfo { Id = System.Guid.NewGuid().ToString(), Identifier = "test1", Name = "testTenant1", EncryptedIdsConnectionString = emptyConnectionString });
@@ -83,6 +81,12 @@ namespace IdentityServer.MultiTenant
                     o.RequireHttpsMetadata = false;
                 })
                 ;
+
+
+            services.AddControllersWithViews(options => {
+                options.Filters.Add<GlobalExceptionFilter>();
+            });
+
 
             services.AddDbContext<AspNetAccountDbContext>((provider,options) => {
                 var contextTenant = provider.GetRequiredService<ContextTenant>();
@@ -103,7 +107,11 @@ namespace IdentityServer.MultiTenant
                     return;
                 }
 
-                options.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                if (realIdsConnStr.Contains("Port=")) {
+                    options.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                } else {
+                    options.UseSqlite(realIdsConnStr);
+                }
             });
 
             services.AddIdentity<ApplicationUser, IdentityRole>()
@@ -123,7 +131,6 @@ namespace IdentityServer.MultiTenant
                 options.EmitStaticAudienceClaim = true;
                 options.InputLengthRestrictions.Scope = 2000;
 
-                
             })
                 //.AddInMemoryIdentityResources(Config.IdentityResources)
                 //.AddInMemoryApiScopes(Config.ApiScopes)
@@ -148,7 +155,11 @@ namespace IdentityServer.MultiTenant
                             return;
                         }
 
-                        builder.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                        if (realIdsConnStr.Contains("Port=")) {
+                            builder.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                        } else {
+                            builder.UseSqlite(realIdsConnStr);
+                        }
                     };
                 })
                 .AddOperationalStore(options => {
@@ -171,7 +182,11 @@ namespace IdentityServer.MultiTenant
                             return;
                         }
 
-                        builder.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                        if (realIdsConnStr.Contains("Port=")) {
+                            builder.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                        } else {
+                            builder.UseSqlite(realIdsConnStr);
+                        }
                     };
                 })
                 .AddAspNetIdentity<ApplicationUser>()
@@ -205,8 +220,9 @@ namespace IdentityServer.MultiTenant
 
                     builder.AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme);
                     builder.RequireAuthenticatedUser();
-                    builder.RequireClaim("aud", "idsmul");
-                    builder.RequireScope("idsmul.manage");
+                    builder.RequireRole(MulTenantConstants.SysAdminRole);
+                    //builder.RequireClaim("aud", "idsmul");
+                    //builder.RequireScope("idsmul.manage");
 
                 });
 
@@ -238,10 +254,10 @@ namespace IdentityServer.MultiTenant
 
             services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
                 .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, opts => {
-                    opts.AccessDeniedPath = "/Account/Login";
+                    opts.AccessDeniedPath = "/sys/Account/Login";
                     opts.Cookie.HttpOnly = true;
-                    opts.LoginPath = "/Account/Login";
-                    opts.Cookie.Name = "idsmul_token";
+                    opts.LoginPath = "/sys/Account/Login";
+                    opts.Cookie.Name = "idsmul_site";
                 })
                 .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, opts => {
                     opts.RequireHttpsMetadata = false;
@@ -292,7 +308,9 @@ namespace IdentityServer.MultiTenant
 
             app.UseAuthorization();
             app.UseEndpoints(endpoints => {
-                endpoints.MapDefaultControllerRoute();
+                endpoints.MapControllerRoute("default", "api/{controller=Home}/{action=Index}");
+                //endpoints.MapControllerRoute("sys", "{__tenant__=}/{controller=Home}/{action=Index}");
+                //endpoints.MapDefaultControllerRoute();
             });
         }
     }

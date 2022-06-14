@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace IdentityServer.MultiTenant.Quickstart
 {
+    [Route("{__tenant__=}/{controller=Home}/{action=Index}")]
     [AllowAnonymous]
     public class HomeController : mvc.Controller
     {
