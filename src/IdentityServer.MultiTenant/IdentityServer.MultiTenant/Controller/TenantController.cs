@@ -19,9 +19,9 @@ namespace IdentityServer.MultiTenant.Controller
     {
         private readonly TenantRepository _tenantRepo;
         private readonly ILogger<TenantController> _logger;
-        private readonly DbOperaService _dbOperaService;
+        private readonly ITenantDbOperation _dbOperaService;
         private readonly EncryptService _encryptService;
-        public TenantController(EncryptService  encryptService,DbOperaService dbOperaService, TenantRepository tenantRepo,ILogger<TenantController> logger) {
+        public TenantController(EncryptService  encryptService, ITenantDbOperation dbOperaService, TenantRepository tenantRepo,ILogger<TenantController> logger) {
             _dbOperaService = dbOperaService;
             _tenantRepo = tenantRepo;
             _logger = logger;
@@ -59,19 +59,15 @@ namespace IdentityServer.MultiTenant.Controller
             bool createDbResult = false;
             bool realResult = false;
             if (isAdd) {   //创建ids db
-                createDbResult =  _dbOperaService.CreateTenantDb(tenantInfoDto,out DbServerModel dbServer,out string creatingDbName,out string createdDbConnStr);
+                createDbResult =  _dbOperaService.CreateTenantDb(ref tenantInfoDto,out DbServerModel dbServer,out string creatingDbName);
                 if (createDbResult) {
-                    tenantInfoDto.ConnectionString = createdDbConnStr;
-                    //加密数据库连接
-                    tenantInfoDto.EncryptedIdsConnectionString =_encryptService.Encrypt_Aes( createdDbConnStr);
-
                     if(_tenantRepo.AddOrUpdateTenant(tenantInfoDto,out errMsg,false)) {
                         realResult = true;
                     }
                 }
 
                 if (!realResult) {
-                    if (dbServer != null && !string.IsNullOrEmpty(creatingDbName)) {
+                    if (!string.IsNullOrEmpty(creatingDbName)) {
                         //开启线程删数据库
                         Task.Run(()=> {
                             _dbOperaService.DeleteTenantDb(dbServer,creatingDbName);

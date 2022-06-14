@@ -14,10 +14,10 @@ using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant.Service
 {
-    public class DbOperaService
+    public class MysqlDbOperaService: ITenantDbOperation
     {
         DbServerRepository _dbServerRepository;
-        ILogger<DbOperaService> _logger;
+        ILogger<MysqlDbOperaService> _logger;
 
         private readonly string _sampleDb_serverHost;
         private readonly int _sampleDb_serverPort;
@@ -33,7 +33,7 @@ namespace IdentityServer.MultiTenant.Service
 
         private readonly EncryptService _encryptService;
 
-        public DbOperaService(IConfiguration config,  DbServerRepository dbServerRepository,ILogger<DbOperaService> logger,EncryptService encryptService) {
+        public MysqlDbOperaService(IConfiguration config,  DbServerRepository dbServerRepository,ILogger<MysqlDbOperaService> logger,EncryptService encryptService) {
             _encryptService = encryptService;
             _dbServerRepository = dbServerRepository;
             _logger = logger;
@@ -45,13 +45,11 @@ namespace IdentityServer.MultiTenant.Service
             _sampleDb_username = config["SampleDb:UserName"];
             _sampleDb_userpassword = config["SampleDb:UserPassword"];
             _sampleDb_dbname = config["SampleDb:DbName"];
-           
         }
 
-        public bool CreateTenantDb(TenantInfoDto tenantInfoDto,out DbServerModel dbServer ,out string creatingDbName,out string createdDbConnStr) {
+        public bool CreateTenantDb(ref TenantInfoDto tenantInfoDto,out DbServerModel dbServer ,out string creatingDbName) {
             dbServer = null;
             creatingDbName = string.Empty;
-            createdDbConnStr = string.Empty;
             if (string.IsNullOrEmpty(_mysqlBinDirPath)
                 || string.IsNullOrEmpty(_sampleDb_serverHost)
                 || _sampleDb_serverPort==0
@@ -87,8 +85,6 @@ namespace IdentityServer.MultiTenant.Service
 
                 creatingDbName = $"ids_{tenantInfoDto.TenantDomain}_{tenantInfoDto.Identifier}";
 
-                //string fileName = "mysql.exe";
-                //string args = string.Format("-h{0} -P{1} -u{2} -p{3}", dbServer.ServerHost, dbServer.ServerPort, dbServer.UserName, dbServer.Userpwd);
                 List<string> creatTenantDbCmdList = new List<string>() {
                     string.Format("mysql -h{0} -P{1} -u{2} -p{3}",selectedDbServer.ServerHost,selectedDbServer.ServerPort,selectedDbServer.UserName,userpassword),
                     string.Format("create database `{0}` default character set utf8mb4 collate utf8mb4_general_ci;",creatingDbName),
@@ -100,12 +96,6 @@ namespace IdentityServer.MultiTenant.Service
                     _logger.LogError("create tenant db");
                     return false;
                 }
-
-                //fileName = "mysqldump.exe";
-                //args = string.Format("{0} -h{1} -P{2} -u{3} -p{4} --add-drop-table --column-statistics=0 | mysql {5} -h{6} -P{7} -u{8} -p{9}",
-                //    _sampleDb_dbname, _sampleDb_serverHost, _sampleDb_serverPort, _sampleDb_username, _sampleDb_userpassword,
-                //    creatingDbName, dbServer.ServerHost, dbServer.ServerPort, dbServer.UserName, userpassword
-                //    );
 
                 List<string> copyCmdList = new List<string>() {
                     string.Format("mysqldump {0} -h{1} -P{2} -u{3} -p{4} --add-drop-table --column-statistics=0 | mysql {5} -h{6} -P{7} -u{8} -p{9}",
@@ -121,7 +111,8 @@ namespace IdentityServer.MultiTenant.Service
                 }
 
                 //Database ={ 0}; Data Source = { 1 }; Port ={ 2}; User Id = { 3 }; Password ={ 4}; Charset = utf8mb4;
-                createdDbConnStr = string.Format(_returnDbConnTempalte,creatingDbName,dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd);
+                string createdDbConnStr = string.Format(_returnDbConnTempalte,creatingDbName,dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd);
+                tenantInfoDto.EncryptedIdsConnectionString = _encryptService.Encrypt_Aes(createdDbConnStr);
 
                 Task.Run(()=> { _dbServerRepository.AddDbCountByDbserver(selectedDbServer.Id); }).ConfigureAwait(false);
 

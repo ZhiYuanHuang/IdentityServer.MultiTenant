@@ -49,7 +49,10 @@ namespace IdentityServer.MultiTenant
         {
             // uncomment, if you want to add an MVC-based UI
             //services.AddControllersWithViews();
-            
+            services.AddControllersWithViews(options => {
+                options.Filters.Add<GlobalExceptionFilter>();
+            });
+
             services.AddDistributedMemoryCache();
 
             var migrationsAssembly = typeof(Startup).GetTypeInfo().Assembly.GetName().Name;
@@ -79,39 +82,27 @@ namespace IdentityServer.MultiTenant
                     int publishPort = Configuration.GetValue<int>("PublishPort");
                     o.Authority = $"http://{tenantinfo.Identifier}.{publishHost}:{publishPort}";// "http://localhost:5000";
                     o.RequireHttpsMetadata = false;
-                })
-                ;
-
-
-            services.AddControllersWithViews(options => {
-                options.Filters.Add<GlobalExceptionFilter>();
-            });
-
-
+                });
+           
             services.AddDbContext<AspNetAccountDbContext>((provider,options) => {
                 var contextTenant = provider.GetRequiredService<ContextTenant>();
+                string realIdsConnStr = string.Empty;
                 if (contextTenant.TenantInfo == null) {
-                    options.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                    return;
-                }
-
-                string realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
-                if(string.IsNullOrEmpty(realIdsConnStr)) {
-                    var encryptService = provider.GetRequiredService<EncryptService>();
-                    string encryptedIdsConnStr =encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
-                    realIdsConnStr = encryptedIdsConnStr;
-                }
-
-                if (string.IsNullOrEmpty(realIdsConnStr)) {
-                    options.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                    return;
-                }
-
-                if (realIdsConnStr.Contains("Port=")) {
-                    options.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                    realIdsConnStr = emptyConnectionString;
                 } else {
-                    options.UseSqlite(realIdsConnStr);
+                    realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
+                    if (string.IsNullOrEmpty(realIdsConnStr)) {
+                        var encryptService = provider.GetRequiredService<EncryptService>();
+                        string encryptedIdsConnStr = encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
+                        realIdsConnStr = encryptedIdsConnStr;
+                    }
+
+                    if (string.IsNullOrEmpty(realIdsConnStr)) {
+                        realIdsConnStr = emptyConnectionString;
+                    }
                 }
+
+                options.UseDbConn(realIdsConnStr);
             });
 
             services.AddIdentity<ApplicationUser, IdentityRole>()
@@ -138,55 +129,47 @@ namespace IdentityServer.MultiTenant
                 .AddConfigurationStore(options => {
                     options.ResolveDbContextOptions = (provider, builder) => {
                         var contextTenant = provider.GetRequiredService<ContextTenant>();
+                        string realIdsConnStr = string.Empty;
                         if (contextTenant.TenantInfo == null) {
-                            builder.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                            return;
-                        }
-
-                        string realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
-                        if (string.IsNullOrEmpty(realIdsConnStr)) {
-                            var encryptService = provider.GetRequiredService<EncryptService>();
-                            string encryptedIdsConnStr =encryptService.Decrypt_Aes( contextTenant.TenantInfo.EncryptedIdsConnectionString);
-                            realIdsConnStr = encryptedIdsConnStr;
-                        }
-
-                        if (string.IsNullOrEmpty(realIdsConnStr)) {
-                            builder.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                            return;
-                        }
-
-                        if (realIdsConnStr.Contains("Port=")) {
-                            builder.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                            realIdsConnStr = emptyConnectionString;
                         } else {
-                            builder.UseSqlite(realIdsConnStr);
+                            realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
+                            if (string.IsNullOrEmpty(realIdsConnStr)) {
+                                var encryptService = provider.GetRequiredService<EncryptService>();
+                                string encryptedIdsConnStr = encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
+                                realIdsConnStr = encryptedIdsConnStr;
+                            }
+
+                            if (string.IsNullOrEmpty(realIdsConnStr)) {
+                                realIdsConnStr = emptyConnectionString;
+                            }
+
                         }
+
+                        builder.UseDbConn(realIdsConnStr);
                     };
                 })
                 .AddOperationalStore(options => {
                     options.ResolveDbContextOptions = (provider, builder) => {
                         var contextTenant = provider.GetRequiredService<ContextTenant>();
+                        string realIdsConnStr = string.Empty;
                         if (contextTenant.TenantInfo == null) {
-                            builder.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                            return;
-                        }
-
-                        string realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
-                        if (string.IsNullOrEmpty(realIdsConnStr)) {
-                            var encryptService = provider.GetRequiredService<EncryptService>();
-                            string encryptedIdsConnStr =encryptService.Decrypt_Aes( contextTenant.TenantInfo.EncryptedIdsConnectionString);
-                            realIdsConnStr = encryptedIdsConnStr;
-                        }
-
-                        if (string.IsNullOrEmpty(realIdsConnStr)) {
-                            builder.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                            return;
-                        }
-
-                        if (realIdsConnStr.Contains("Port=")) {
-                            builder.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                            realIdsConnStr = emptyConnectionString;
                         } else {
-                            builder.UseSqlite(realIdsConnStr);
+                            realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
+                            if (string.IsNullOrEmpty(realIdsConnStr)) {
+                                var encryptService = provider.GetRequiredService<EncryptService>();
+                                string encryptedIdsConnStr = encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
+                                realIdsConnStr = encryptedIdsConnStr;
+                            }
+
+                            if (string.IsNullOrEmpty(realIdsConnStr)) {
+                                realIdsConnStr = emptyConnectionString;
+                            }
+
                         }
+
+                        builder.UseDbConn(realIdsConnStr);
                     };
                 })
                 .AddAspNetIdentity<ApplicationUser>()
@@ -284,7 +267,15 @@ namespace IdentityServer.MultiTenant
             });
             services.AddTransient<TenantRepository>();
             services.AddTransient<DbServerRepository>();
-            services.AddSingleton<DbOperaService>();
+            services.AddSingleton<MysqlDbOperaService>();
+            services.AddSingleton<SqliteDbOperaService>();
+            services.AddSingleton<ITenantDbOperation>(provider => { 
+                if(string.CompareOrdinal(Configuration["SampleDb:DbType"], "mysql")==0) {
+                    return provider.GetRequiredService<MysqlDbOperaService>();
+                } else {
+                    return provider.GetRequiredService<SqliteDbOperaService>();
+                }
+            });
             services.AddSingleton<EncryptService>();
         }
 
