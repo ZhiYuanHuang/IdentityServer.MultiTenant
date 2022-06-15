@@ -203,11 +203,10 @@ namespace IdentityServer.MultiTenant
 
                 options.AddPolicy("sysManagePolicy", builder => {
 
-                    builder.AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme);
+                    //builder.AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme);
+                    builder.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme);
                     builder.RequireAuthenticatedUser();
                     builder.RequireRole(MulTenantConstants.SysAdminRole);
-                    //builder.RequireClaim("aud", "idsmul");
-                    //builder.RequireScope("idsmul.manage");
 
                 });
 
@@ -227,30 +226,22 @@ namespace IdentityServer.MultiTenant
                 //});
             });
 
-            //services.AddAuthentication("Bearer")
-            //    .AddIdentityServerAuthentication(options => {
-            //        string publishHost = Configuration.GetValue<string>("PublishHost");
-            //        int publishPort = Configuration.GetValue<int>("PublishPort");
-            //        options.Authority = $"http://{publishHost}:{publishPort}";// "http://localhost:5000";
-            //        options.RequireHttpsMetadata = false;
+            services//.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+                .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                //.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, opts => {
+                //    opts.AccessDeniedPath = "/sys/Account/Login";
+                //    opts.Cookie.HttpOnly = true;
+                //    opts.LoginPath = "/sys/Account/Login";
 
-            //    })
-            //    ;
 
-            services.Configure<CookiePolicyOptions>(option=> {
-                option.MinimumSameSitePolicy = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
-                option.Secure = Microsoft.AspNetCore.Http.CookieSecurePolicy.None;
-            });
-
-            services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-                .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, opts => {
-                    opts.AccessDeniedPath = "/sys/Account/Login";
-                    opts.Cookie.HttpOnly = true;
-                    opts.LoginPath = "/sys/Account/Login";
-                    opts.Cookie.Name = IdentityServerConstants.DefaultCookieAuthenticationScheme;
-                    opts.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
-                    opts.Cookie.SecurePolicy=Microsoft.AspNetCore.Http.CookieSecurePolicy.None;
-                })
+                //    opts.Cookie.Name = "sdfdss";
+                //    opts.Cookie.IsEssential = true;
+                //    opts.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None;
+                //    //opts.Cookie.Name=
+                //    //opts.Cookie.Name = IdentityServerConstants.DefaultCookieAuthenticationScheme;
+                //    //opts.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+                //    //opts.Cookie.SecurePolicy=Microsoft.AspNetCore.Http.CookieSecurePolicy.None;
+                //})
                 .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, opts => {
                     opts.RequireHttpsMetadata = false;
                     string publishHost = Configuration.GetValue<string>("PublishHost");
@@ -258,10 +249,14 @@ namespace IdentityServer.MultiTenant
                     opts.Authority = $"http://{publishHost}:{publishPort}";// "http://localhost:5000";
                 });
 
-            //services.Configure<CookieAuthenticationOptions>(IdentityServerConstants.DefaultCookieAuthenticationScheme,options=> {
-            //    options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None;
-            //    options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
-            //});
+            services.Configure<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme, options => {
+                options.AccessDeniedPath = "/sys/Account/Login";
+                options.Cookie.HttpOnly = true;
+                options.LoginPath = "/sys/Account/Login";
+               
+                options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None;
+                options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
+            });
 
             services.AddCors(options => {
                 options.AddPolicy("default", policy => {
@@ -311,7 +306,6 @@ namespace IdentityServer.MultiTenant
             app.UseMiddleware<ContextTenantMiddleware>();
             app.UseIdentityServer();
 
-            app.UseCookiePolicy();
             app.UseAuthorization();
             app.UseEndpoints(endpoints => {
                 endpoints.MapControllerRoute("default", "api/{controller=Home}/{action=Index}");
