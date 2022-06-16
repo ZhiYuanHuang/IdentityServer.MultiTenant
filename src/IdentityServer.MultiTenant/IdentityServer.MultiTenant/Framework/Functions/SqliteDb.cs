@@ -1,110 +1,131 @@
-﻿using IdentityServer.MultiTenant.Dto;
-using Microsoft.Extensions.Logging;
-using MySql.Data.MySqlClient;
+﻿using Microsoft.Extensions.Logging;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Data.SQLite;
+using System.Data.Common;
 using System.Reflection;
+using IdentityServer.MultiTenant.Dto;
 
 namespace IdentityServer.MultiTenant.Framework
 {
-    public class MySqlDb: IDbFunc
+    public class SqliteDb: IDbFunc
     {
-        private const string MYSQL_CONNECTION = "MySqlConnection";
-        private const string MYSQL_TRANSACTION = "MySqlTransaction";
-        private const string MYSQL_TRANSACTION_COUNTER = "MySqlTransactionCounter";
+        private const string SQLITE_CONNECTION = "SqliteConnection";
+        private const string SQLITE_TRANSACTION = "SqliteTransaction";
+        private const string SQLITE_TRANSACTION_COUNTER = "SqliteTransactionCounter";
 
         private const int ALARM_THRESHOLD_VALUE = 1000000; // 50毫秒
-        private const int COMMAND_TIMEOUT = 300;          // 300秒    
+        private const int COMMAND_TIMEOUT = 300;          // 300秒
 
-        private ConcurrentQueue<MySqlConnection> _queue = new ConcurrentQueue<MySqlConnection>();
+        //调用超时
+        private const int INVOKE_TIMEOUT = 1000 * 30;
 
         private readonly string _connectionString = null;
+
+        //Data Source=IdentityServer.db;
         public string ConnectionString { get { return _connectionString; } }
-        /// <summary>
-        /// 数据库名称
-        /// </summary>
-        public string DbName { get; }
 
-        private ILogger<MySqlDb> _logger;
+        public string DbName { get; set; }
 
-        public MySqlDb(ILoggerFactory loggerFactory,string connectionString) {
+        private ILogger<SqliteDb> _logger;
+        private readonly Mutex _mutex;
 
-            _logger = loggerFactory.CreateLogger<MySqlDb>();
+        private SQLiteConnection _connection = null;
+
+        public SqliteDb(ILoggerFactory loggerFactory, string connectionString) {
+            _logger = loggerFactory.CreateLogger<SqliteDb>();
+            _mutex = new Mutex();
 
             _connectionString = connectionString;
-            {
-                // get db_name from connection_string
-                foreach (string s in _connectionString.Split(';')) {
-                    if (s.Trim().ToLower().StartsWith("database")) {
-                        DbName = s.Split('=')[1].Trim();
-                        break;
-                    }
-                }
+
+            int tmpIndex = connectionString.IndexOf("Data Source=");
+
+            if (tmpIndex != -1) {
+                int tmpEndIndex = connectionString.IndexOf(';',tmpIndex);
+                DbName = connectionString.Substring(tmpIndex+12, tmpEndIndex-tmpIndex-1);
             }
         }
 
         public void BeginTransaction() {
-            CallContext.SetData(MYSQL_TRANSACTION_COUNTER, ConvertUtil.ToInt(CallContext.GetData(MYSQL_TRANSACTION_COUNTER), 0) + 1);
+            bool getMutex= _mutex.WaitOne(INVOKE_TIMEOUT);
 
-            MySqlConnection connection = CallContext.GetData(MYSQL_CONNECTION) as MySqlConnection;
+            if (!getMutex) {
+                throw new Exception($"Get Mutex Timeout");
+            }
+
+            CallContext.SetData(SQLITE_TRANSACTION_COUNTER, ConvertUtil.ToInt(CallContext.GetData(SQLITE_TRANSACTION_COUNTER), 0) + 1);
+
+            SQLiteConnection connection = CallContext.GetData(SQLITE_CONNECTION) as SQLiteConnection;
             if (connection == null) {
                 connection = GetConnection();
-                MySqlTransaction transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
 
-                CallContext.SetData(MYSQL_CONNECTION, connection);
-                CallContext.SetData(MYSQL_TRANSACTION, transaction);
+                SQLiteTransaction transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+
+                CallContext.SetData(SQLITE_CONNECTION, connection);
+                CallContext.SetData(SQLITE_TRANSACTION, transaction);
             }
         }
 
         public void CommitTransaction() {
-            CallContext.SetData(MYSQL_TRANSACTION_COUNTER, ConvertUtil.ToInt(CallContext.GetData(MYSQL_TRANSACTION_COUNTER), 0) - 1);
+            CallContext.SetData(SQLITE_TRANSACTION_COUNTER, ConvertUtil.ToInt(CallContext.GetData(SQLITE_TRANSACTION_COUNTER), 0) - 1);
 
-            int counter = ConvertUtil.ToInt(CallContext.GetData(MYSQL_TRANSACTION_COUNTER), 0);
+            int counter = ConvertUtil.ToInt(CallContext.GetData(SQLITE_TRANSACTION_COUNTER), 0);
             if (counter > 0) {
                 return;
             }
 
-            MySqlTransaction transaction = CallContext.GetData(MYSQL_TRANSACTION) as MySqlTransaction;
+            SQLiteTransaction transaction = CallContext.GetData(SQLITE_TRANSACTION) as SQLiteTransaction;
             if (transaction != null) {
                 transaction.Commit();
                 transaction.Dispose();
 
-                MySqlConnection connection = CallContext.GetData(MYSQL_CONNECTION) as MySqlConnection;
+                SQLiteConnection connection = CallContext.GetData(SQLITE_CONNECTION) as SQLiteConnection;
                 FreeConnection(connection);
 
-                CallContext.SetData(MYSQL_TRANSACTION, null);
-                CallContext.SetData(MYSQL_CONNECTION, null);
+                CallContext.SetData(SQLITE_TRANSACTION, null);
+                CallContext.SetData(SQLITE_CONNECTION, null);
+
+                _mutex.ReleaseMutex();
             }
         }
 
         public void RollbackTransaction() {
-            CallContext.SetData(MYSQL_TRANSACTION_COUNTER, null);
+            CallContext.SetData(SQLITE_TRANSACTION_COUNTER, null);
 
-            MySqlTransaction transaction = CallContext.GetData(MYSQL_TRANSACTION) as MySqlTransaction;
+            SQLiteTransaction transaction = CallContext.GetData(SQLITE_TRANSACTION) as SQLiteTransaction;
             if (transaction != null) {
                 transaction.Rollback();
                 transaction.Dispose();
 
-                MySqlConnection connection = CallContext.GetData(MYSQL_CONNECTION) as MySqlConnection;
+                SQLiteConnection connection = CallContext.GetData(SQLITE_CONNECTION) as SQLiteConnection;
                 FreeConnection(connection);
 
-                CallContext.SetData(MYSQL_TRANSACTION, null);
-                CallContext.SetData(MYSQL_CONNECTION, null);
+                CallContext.SetData(SQLITE_TRANSACTION, null);
+                CallContext.SetData(SQLITE_CONNECTION, null);
+
+                _mutex.ReleaseMutex();
             }
         }
 
         public int ExecuteNonQuery(string sql) {
             int ret = 0;
-            MySqlCommand cmd = new MySqlCommand();
 
-            MySqlTransaction transaction = null;
-            MySqlConnection connection = CallContext.GetData(MYSQL_CONNECTION) as MySqlConnection;
+            SQLiteCommand cmd = new SQLiteCommand();
+            Mutex tmpMutex = null;
+
+            SQLiteTransaction transaction = null;
+            SQLiteConnection connection = CallContext.GetData(SQLITE_CONNECTION) as SQLiteConnection;
             if (connection == null) {
+                tmpMutex = _mutex;
+                tmpMutex.WaitOne();
+
                 connection = GetConnection();
             } else {
-                transaction = CallContext.GetData(MYSQL_TRANSACTION) as MySqlTransaction;
+                transaction = CallContext.GetData(SQLITE_TRANSACTION) as SQLiteTransaction;
             }
 
             long startTicks = DateTime.Now.Ticks;
@@ -117,16 +138,19 @@ namespace IdentityServer.MultiTenant.Framework
                 cmd.CommandTimeout = COMMAND_TIMEOUT;
 
                 ret = cmd.ExecuteNonQuery();
-            } catch (Exception ex) {
-                _logger.LogError(ex.ToString() + "|" + sql);
-                throw new Exception(ex.Message, ex);
-            } finally {
+            }catch(Exception ex) {
+                _logger.LogError(ex.ToString()+"|"+sql);
+                throw new Exception(ex.Message,ex);
+            }
+            finally {
                 cmd.Dispose();
                 cmd = null;
 
                 if (transaction == null) {
                     FreeConnection(connection);
                 }
+
+                tmpMutex?.ReleaseMutex();
             }
 
             long elapsedTicks = DateTime.Now.Ticks - startTicks;
@@ -137,16 +161,21 @@ namespace IdentityServer.MultiTenant.Framework
             return ret;
         }
 
-        public int ExecuteNonQuery(string sql, Dictionary<string, object> p) {
+        public int ExecuteNonQuery(string sql,Dictionary<string,object> p) {
             int ret = 0;
-            MySqlCommand cmd = new MySqlCommand();
 
-            MySqlTransaction transaction = null;
-            MySqlConnection connection = CallContext.GetData(MYSQL_CONNECTION) as MySqlConnection;
+            SQLiteCommand cmd = new SQLiteCommand();
+            Mutex tmpMutex = null;
+
+            SQLiteTransaction transaction = null;
+            SQLiteConnection connection = CallContext.GetData(SQLITE_CONNECTION) as SQLiteConnection;
             if (connection == null) {
+                tmpMutex = _mutex;
+                tmpMutex.WaitOne();
+
                 connection = GetConnection();
             } else {
-                transaction = CallContext.GetData(MYSQL_TRANSACTION) as MySqlTransaction;
+                transaction = CallContext.GetData(SQLITE_TRANSACTION) as SQLiteTransaction;
             }
 
             long startTicks = DateTime.Now.Ticks;
@@ -159,7 +188,7 @@ namespace IdentityServer.MultiTenant.Framework
                 cmd.CommandTimeout = COMMAND_TIMEOUT;
 
                 foreach (KeyValuePair<string, object> kvp in p) {
-                    MySqlParameter param = new MySqlParameter();
+                    SQLiteParameter param = new SQLiteParameter();
                     param.ParameterName = "?" + kvp.Key;
                     param.Value = kvp.Value;
                     param.Direction = ParameterDirection.Input;
@@ -177,6 +206,8 @@ namespace IdentityServer.MultiTenant.Framework
                 if (transaction == null) {
                     FreeConnection(connection);
                 }
+
+                tmpMutex?.ReleaseMutex();
             }
 
             long elapsedTicks = DateTime.Now.Ticks - startTicks;
@@ -189,14 +220,19 @@ namespace IdentityServer.MultiTenant.Framework
 
         public object ExecuteScalar(string sql) {
             object ret = null;
-            MySqlCommand cmd = new MySqlCommand();
 
-            MySqlTransaction transaction = null;
-            MySqlConnection connection = CallContext.GetData(MYSQL_CONNECTION) as MySqlConnection;
+            SQLiteCommand cmd = new SQLiteCommand();
+            Mutex tmpMutex = null;
+
+            SQLiteTransaction transaction = null;
+            SQLiteConnection connection = CallContext.GetData(SQLITE_CONNECTION) as SQLiteConnection;
             if (connection == null) {
+                tmpMutex = _mutex;
+                tmpMutex.WaitOne();
+
                 connection = GetConnection();
             } else {
-                transaction = CallContext.GetData(MYSQL_TRANSACTION) as MySqlTransaction;
+                transaction = CallContext.GetData(SQLITE_TRANSACTION) as SQLiteTransaction;
             }
 
             long startTicks = DateTime.Now.Ticks;
@@ -219,6 +255,8 @@ namespace IdentityServer.MultiTenant.Framework
                 if (transaction == null) {
                     FreeConnection(connection);
                 }
+
+                tmpMutex?.ReleaseMutex();
             }
 
             long elapsedTicks = DateTime.Now.Ticks - startTicks;
@@ -229,16 +267,21 @@ namespace IdentityServer.MultiTenant.Framework
             return ret;
         }
 
-        public object ExecuteScalar(string sql, Dictionary<string, object> p) {
+        public object ExecuteScalar(string sql,Dictionary<string,object> p) {
             object ret = null;
-            MySqlCommand cmd = new MySqlCommand();
 
-            MySqlTransaction transaction = null;
-            MySqlConnection connection = CallContext.GetData(MYSQL_CONNECTION) as MySqlConnection;
+            SQLiteCommand cmd = new SQLiteCommand();
+            Mutex tmpMutex = null;
+
+            SQLiteTransaction transaction = null;
+            SQLiteConnection connection = CallContext.GetData(SQLITE_CONNECTION) as SQLiteConnection;
             if (connection == null) {
+                tmpMutex = _mutex;
+                tmpMutex.WaitOne();
+
                 connection = GetConnection();
             } else {
-                transaction = CallContext.GetData(MYSQL_TRANSACTION) as MySqlTransaction;
+                transaction = CallContext.GetData(SQLITE_TRANSACTION) as SQLiteTransaction;
             }
 
             long startTicks = DateTime.Now.Ticks;
@@ -251,7 +294,7 @@ namespace IdentityServer.MultiTenant.Framework
                 cmd.CommandTimeout = COMMAND_TIMEOUT;
 
                 foreach (KeyValuePair<string, object> kvp in p) {
-                    MySqlParameter param = new MySqlParameter();
+                    SQLiteParameter param = new SQLiteParameter();
                     param.ParameterName = "?" + kvp.Key;
                     param.Value = kvp.Value;
                     param.Direction = ParameterDirection.Input;
@@ -269,6 +312,8 @@ namespace IdentityServer.MultiTenant.Framework
                 if (transaction == null) {
                     FreeConnection(connection);
                 }
+
+                tmpMutex?.ReleaseMutex();
             }
 
             long elapsedTicks = DateTime.Now.Ticks - startTicks;
@@ -281,15 +326,21 @@ namespace IdentityServer.MultiTenant.Framework
 
         public DataTable ExecuteDataTable(string sql) {
             DataTable ret = new DataTable();
-            MySqlCommand cmd = new MySqlCommand();
-            MySqlDataAdapter da = new MySqlDataAdapter();
 
-            MySqlTransaction transaction = null;
-            MySqlConnection connection = CallContext.GetData(MYSQL_CONNECTION) as MySqlConnection;
+            SQLiteCommand cmd = new SQLiteCommand();
+            SQLiteDataAdapter da = new SQLiteDataAdapter();
+           
+            Mutex tmpMutex = null;
+
+            SQLiteTransaction transaction = null;
+            SQLiteConnection connection = CallContext.GetData(SQLITE_CONNECTION) as SQLiteConnection;
             if (connection == null) {
+                tmpMutex = _mutex;
+                tmpMutex.WaitOne();
+
                 connection = GetConnection();
             } else {
-                transaction = CallContext.GetData(MYSQL_TRANSACTION) as MySqlTransaction;
+                transaction = CallContext.GetData(SQLITE_TRANSACTION) as SQLiteTransaction;
             }
 
             long startTicks = DateTime.Now.Ticks;
@@ -315,6 +366,8 @@ namespace IdentityServer.MultiTenant.Framework
                 if (transaction == null) {
                     FreeConnection(connection);
                 }
+
+                tmpMutex?.ReleaseMutex();
             }
 
             long elapsedTicks = DateTime.Now.Ticks - startTicks;
@@ -325,17 +378,23 @@ namespace IdentityServer.MultiTenant.Framework
             return ret;
         }
 
-        public DataTable ExecuteDataTable(string sql, Dictionary<string, object> p) {
+        public DataTable ExecuteDataTable(string sql,Dictionary<string,object> p) {
             DataTable ret = new DataTable();
-            MySqlCommand cmd = new MySqlCommand();
-            MySqlDataAdapter da = new MySqlDataAdapter();
 
-            MySqlTransaction transaction = null;
-            MySqlConnection connection = CallContext.GetData(MYSQL_CONNECTION) as MySqlConnection;
+            SQLiteCommand cmd = new SQLiteCommand();
+            SQLiteDataAdapter da = new SQLiteDataAdapter();
+
+            Mutex tmpMutex = null;
+
+            SQLiteTransaction transaction = null;
+            SQLiteConnection connection = CallContext.GetData(SQLITE_CONNECTION) as SQLiteConnection;
             if (connection == null) {
+                tmpMutex = _mutex;
+                tmpMutex.WaitOne();
+
                 connection = GetConnection();
             } else {
-                transaction = CallContext.GetData(MYSQL_TRANSACTION) as MySqlTransaction;
+                transaction = CallContext.GetData(SQLITE_TRANSACTION) as SQLiteTransaction;
             }
 
             long startTicks = DateTime.Now.Ticks;
@@ -348,7 +407,7 @@ namespace IdentityServer.MultiTenant.Framework
                 cmd.CommandTimeout = COMMAND_TIMEOUT;
 
                 foreach (KeyValuePair<string, object> kvp in p) {
-                    MySqlParameter param = new MySqlParameter();
+                    SQLiteParameter param = new SQLiteParameter();
                     param.ParameterName = "?" + kvp.Key;
                     param.Value = kvp.Value;
                     param.Direction = ParameterDirection.Input;
@@ -369,6 +428,8 @@ namespace IdentityServer.MultiTenant.Framework
                 if (transaction == null) {
                     FreeConnection(connection);
                 }
+
+                tmpMutex?.ReleaseMutex();
             }
 
             long elapsedTicks = DateTime.Now.Ticks - startTicks;
@@ -513,39 +574,35 @@ namespace IdentityServer.MultiTenant.Framework
             return list;
         }
 
-        private MySqlConnection GetConnection() {
+        private SQLiteConnection GetConnection() {
             long startTicks = DateTime.Now.Ticks;
 
-            bool ok = _queue.TryDequeue(out MySqlConnection connection);
-            if (!ok) {
-                connection = new MySqlConnection(_connectionString);
+            SQLiteConnection connection = null;
+            if (_connection == null) {
+                connection = new SQLiteConnection(_connectionString);
+                _connection = connection;
+            } else {
+                connection = _connection;
             }
 
             try {
                 connection.Open();
-            } catch (Exception ex) {
-                _logger.LogError(ex.ToString() + "|" + _connectionString);
-                throw new Exception(ex.Message, ex);
+            }
+            catch(Exception ex) {
+                _logger.LogError(ex.ToString()+"|"+ _connectionString);
+                throw new Exception(ex.Message,ex);
             }
 
             long elapsedTicks = DateTime.Now.Ticks - startTicks;
             if (elapsedTicks > ALARM_THRESHOLD_VALUE) {
-                int indexdatabase = _connectionString.IndexOf("database");
-                string logConnStr = indexdatabase > -1 ? _connectionString.Substring(indexdatabase, 30) : "[no database]";  // 避免暴露DB
-                _logger.LogWarning($"打开连接超过预定伐值:{ALARM_THRESHOLD_VALUE / 10000}(毫秒), Queue Count:{_queue.Count}, ConnectionString:{logConnStr}, Mileseconds:{elapsedTicks / 10000}");
+                _logger.LogWarning($"打开连接超过预定伐值:{ALARM_THRESHOLD_VALUE / 10000}(毫秒), ConnectionString:{_connectionString}, Mileseconds:{elapsedTicks / 10000}");
             }
 
             return connection;
         }
 
-        private void FreeConnection(MySqlConnection connection) {
+        private void FreeConnection(SQLiteConnection connection) {
             connection.Close();
-
-            if (_queue.Count < 1000) {
-                _queue.Enqueue(connection);
-            } else {
-                connection = null;
-            }
         }
     }
 }

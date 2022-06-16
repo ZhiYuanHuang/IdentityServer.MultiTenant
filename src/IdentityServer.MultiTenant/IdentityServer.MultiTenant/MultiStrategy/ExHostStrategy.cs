@@ -68,6 +68,10 @@ namespace IdentityServer.MultiTenant.MultiStrategy
             if (host.HasValue == false)
                 return null;
 
+            if(System.Net.IPAddress.TryParse(host.Host,out _)) {
+                return null;
+            }
+
             string? identifier = null;
 
             var match = Regex.Match(host.Host, regex,
