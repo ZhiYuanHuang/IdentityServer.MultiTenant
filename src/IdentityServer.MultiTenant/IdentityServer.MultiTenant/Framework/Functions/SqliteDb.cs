@@ -46,7 +46,7 @@ namespace IdentityServer.MultiTenant.Framework
 
             if (tmpIndex != -1) {
                 int tmpEndIndex = connectionString.IndexOf(';',tmpIndex);
-                DbName = connectionString.Substring(tmpIndex+12, tmpEndIndex-tmpIndex-1);
+                DbName = connectionString.Substring(tmpIndex+12, tmpEndIndex-tmpIndex-12);
             }
         }
 
