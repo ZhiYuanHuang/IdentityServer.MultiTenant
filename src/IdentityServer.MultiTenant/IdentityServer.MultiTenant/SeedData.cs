@@ -1,7 +1,9 @@
 ﻿using IdentityModel;
 using IdentityServer.MultiTenant.Data;
 using IdentityServer.MultiTenant.Framework.Const;
+using IdentityServer.MultiTenant.Framework.Utils;
 using IdentityServer.MultiTenant.Models;
+using IdentityServer4.EntityFramework.DbContexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -18,14 +20,33 @@ namespace IdentityServer.MultiTenant
     {
         public static void EnsureSeedData(string connectionString,IConfiguration config) {
             var migrationsAssembly = typeof(Startup).GetTypeInfo().Assembly.GetName().Name;
+            var sysIdsConnStr = config.GetConnectionString("SysIdsConnection");
             var services = new ServiceCollection();
             services.AddLogging();
+
+            services.AddIdentityServer(options => {
+                options.Events.RaiseErrorEvents = true;
+                options.Events.RaiseInformationEvents = true;
+                options.Events.RaiseFailureEvents = true;
+                options.Events.RaiseSuccessEvents = true;
+                options.EmitStaticAudienceClaim = true;
+                options.InputLengthRestrictions.Scope = 2000;
+
+                options.Authentication.CookieSameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+            })
+                .AddConfigurationStore(options => {
+                    options.ConfigureDbContext = (builder) => {
+                        builder.UseDbConn(sysIdsConnStr);
+                    };
+                })
+                .AddOperationalStore(options => {
+                    options.ConfigureDbContext = (builder) => {
+                        builder.UseDbConn(sysIdsConnStr);
+                    };
+                });
+
             services.AddDbContext<AspNetAccountDbContext>(options => {
-                if (connectionString.Contains("Port=")) {
-                    options.UseMySql(connectionString, MySqlServerVersion.AutoDetect(connectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                } else {
-                    options.UseSqlite(connectionString);
-                }
+                options.UseDbConn(connectionString);
             });
 
 
@@ -38,8 +59,14 @@ namespace IdentityServer.MultiTenant
 
             using (var serviceProvider = services.BuildServiceProvider()) {
                 using (var scope = serviceProvider.GetRequiredService<IServiceScopeFactory>().CreateScope()) {
+                    //var idsContext = scope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
+                    //idsContext.Database.Migrate();
+
+                    //var idsContext2 = scope.ServiceProvider.GetRequiredService<PersistedGrantDbContext>();
+                    //idsContext2.Database.Migrate();
+
                     var context = scope.ServiceProvider.GetService<AspNetAccountDbContext>();
-                    context.Database.Migrate();
+                    //context.Database.Migrate();
 
                     var roleMgr = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
                     var sysAdminRole= roleMgr.FindByNameAsync(MulTenantConstants.SysAdminRole).Result;
