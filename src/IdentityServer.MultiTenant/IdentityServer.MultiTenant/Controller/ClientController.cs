@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant.Controller
 {
-    [Route("api/[controller]/[action]")]
+    [Route("{__tenant__=}/api/[controller]/[action]")]
     [ApiController]
     [Authorize(Policy = "sysManagePolicy")]
     public class ClientController : ControllerBase {
@@ -25,6 +25,18 @@ namespace IdentityServer.MultiTenant.Controller
 
         [HttpPost]
         public async Task<AppResponseDto> AddOrUpdate([FromBody]IdentityServer4.EntityFramework.Entities.Client client) {
+            if (string.IsNullOrEmpty(client.ClientId)) {
+                return new AppResponseDto(false) {ErrorMsg="ClientId 不可为空" };
+            }
+
+            if(!System.Text.RegularExpressions.Regex.IsMatch(client.ClientId, "[a-zA-Z0-9]{5,15}")) {
+                return new AppResponseDto(false) {ErrorMsg="ClientId 应为英文字母、数字组合，最小5位，最大15位" };
+            }
+
+            if (client.ClientSecrets.Any() && !System.Text.RegularExpressions.Regex.IsMatch(client.ClientSecrets[0].Value, "[a-zA-Z0-9]{6,20}")) {
+                return new AppResponseDto(false) { ErrorMsg = "ClientSecret 应为英文字母、数字组合，最小5位，最大20位" };
+            }
+
             IdentityServer4.EntityFramework.Entities.Client existedClient =await _configurationDbContext.Clients
                 .Include(x => x.ClientSecrets)
                 .Include(x => x.Claims)
