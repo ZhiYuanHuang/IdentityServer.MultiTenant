@@ -18,21 +18,28 @@ namespace IdentityServer.MultiTenant.Repository
             _logger = logger;
         }
 
-        public List<DbServerModel> GetDbServers() {
-            return _dbUtil.Master.QueryList<DbServerModel>("Select * From DbServer ");
+        public List<DbServerModel> GetDbServers(Int64? dbServerId=null) {
+            string sql = "Select * From DbServer ";
+
+            Dictionary<string, object> param = new Dictionary<string, object>();
+            if (dbServerId.HasValue && dbServerId.Value > 0) {
+                sql += "Where Id=@id";
+                param["id"] = dbServerId.Value;
+            }
+            return _dbUtil.Master.QueryList<DbServerModel>(sql,param);
         }
 
-        public void AddDbCountByDbserver(int dbServerId,bool isPlus=true) {
+        public void AddDbCountByDbserver(Int64 dbServerId,bool isPlus=true) {
             _dbUtil.Master.ExecuteNonQuery($"Update DbServer Set CreatedDbCount=CreatedDbCount{(isPlus?"+":"-")}1 Where Id=@id",new Dictionary<string, object>() { { "id",dbServerId} });
         }
 
         public bool AddDbServer(DbServerModel dbServerModel) {
             string sql = @"Insert Into DbServer 
                             (ServerHost,ServerPort,UserName,Userpwd,EncryptUserpwd,CreatedDbCount,EnableStatus)
-                            Value
-                            (@serverHost,@serverPort,@userName,@userpwd,@encryptUserpwd,@createdDbCount,@enableStatus)
-                            On Duplicate Key 
-                            Update UserName=@userName,Userpwd=@userpwd,EncryptUserpwd=@encryptUserpwd";
+                            Values
+                            (@serverHost,@serverPort,@userName,@userpwd,@encryptUserpwd,@createdDbCount,@enableStatus)";
+                            //On Duplicate Key 
+                            //Update UserName=@userName,Userpwd=@userpwd,EncryptUserpwd=@encryptUserpwd";
 
             int row= _dbUtil.Master.ExecuteNonQuery(sql,new Dictionary<string, object>() {
                 { "serverHost",dbServerModel.ServerHost},
@@ -46,7 +53,21 @@ namespace IdentityServer.MultiTenant.Repository
             return row > 0;
         }
 
-        public void ChangeStatus(int dbServerId,int enableStatus) {
+        public bool DeleteDbServer(Int64 dbServerId) {
+            return _dbUtil.Master.ExecuteNonQuery("Delete From DbServer Where Id=@id",new Dictionary<string, object>() {
+                { "id",dbServerId}
+            })>0;
+        }
+
+        public int GetDbServerRef(Int64 dbServerId) {
+            var refTenantList= _dbUtil.Master.QueryList<TenantDbServerRefModel>("Select * From TenantDbServerRef Where DbServerId=@dbServerId",
+                new Dictionary<string, object>() {
+                    { "dbServerId",dbServerId}
+                });
+            return refTenantList.Count;
+        }
+
+        public void ChangeStatus(Int64 dbServerId,int enableStatus) {
             _dbUtil.Master.ExecuteNonQuery("Update DbServer Set EnableStatus=@enableStatus Where Id=@id",new Dictionary<string, object>() {
                 { "id",dbServerId},
                 { "enableStatus",enableStatus}

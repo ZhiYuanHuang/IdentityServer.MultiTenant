@@ -7,7 +7,7 @@ namespace IdentityServer.MultiTenant.Models
 {
     public class TenantInfoModel
     {
-        public int Id { get; set; }
+        public Int64 Id { get; set; }
         public string GuidId { get; set; }
         public string Identifier { get; set; }
         public int TenantDomainId { get; set; }

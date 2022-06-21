@@ -29,7 +29,7 @@
                 <td>
                     <div>
                         <input type="button" value="重置密码" class="btn btn-primary" onclick="@Html.Raw(String.Format("resetClientSecret('{0}')",client.ClientId))" />
-                        <input type="button" value="删除" class="btn btn-primary" onclick=""/>
+                        <input type="button" value="删除" class="btn btn-primary" onclick="@Html.Raw(String.Format("deleteClient('{0}')",client.ClientId))"/>
                     </div>
                 </td>
                 <td hidden>@client.Id</td>
@@ -121,6 +121,29 @@
                     else {
                         console.log(data.errorMsg);
                         alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        function deleteClient(clientIdValue) {
+
+            $.ajax({
+                url: "/sys/api/client/Delete?clientId=" + clientIdValue,
+                type: "get",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        //alert(data.result);
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert('删除失败');
                     }
                 },
                 error: function (e) {

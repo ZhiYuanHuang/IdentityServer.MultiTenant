@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant.Controller
 {
-    [Route("api/[controller]")]
+    [Route("api/[controller]/[action]")]
     [ApiController]
     public class TenantController : ControllerBase
     {
@@ -28,55 +28,43 @@ namespace IdentityServer.MultiTenant.Controller
             _encryptService = encryptService;
         }
 
-        [HttpPost("AddOrUpdate")]
+        [HttpPost]
         [Authorize(Policy = "manageTenantPolicy")] //(Policy  = "sysManagePolicy")
-        public AppResponseDto AddOrUpdate([FromBody]TenantInfoDto tenantInfoDto) {
-            bool isAdd = tenantInfoDto.Id <= 0;
+        public AppResponseDto CreateTenant([FromBody]TenantInfoDto tenantInfoDto) {
 
             bool isExist= _tenantRepo.ExistTenant(tenantInfoDto.TenantDomain,tenantInfoDto.Identifier,out TenantInfoDto existedTenantInfo);
 
-            if (isAdd && isExist) {
+            if (isExist) {
                 return new AppResponseDto(false) { ErrorMsg="tenant existed"};
             }
 
-            if(!isAdd) {
-                if (!isExist) {
-                    return new AppResponseDto(false) { ErrorMsg = "tenant not existed" };
-                } else if(tenantInfoDto.Id!=existedTenantInfo.Id){
-                    return new AppResponseDto(false) { ErrorMsg = "tenant id not match" };
-                }
-            }
-
-            if (!isAdd) {    //update fetch db conn
-                tenantInfoDto.ConnectionString = existedTenantInfo.ConnectionString;
-                tenantInfoDto.EncryptedIdsConnectionString = existedTenantInfo.EncryptedIdsConnectionString;
-            }
-
-            if(!_tenantRepo.AddOrUpdateTenant(tenantInfoDto,out string errMsg, isAdd)) {
+            //先插tenant基本信息
+            if(!_tenantRepo.AddOrUpdateTenant(tenantInfoDto,out string errMsg, true)) {
                 return new AppResponseDto(false) { ErrorMsg=errMsg};
             }
 
-            bool createDbResult = false;
             bool realResult = false;
-            if (isAdd) {   //创建ids db
-                createDbResult =  _dbOperaService.CreateTenantDb(ref tenantInfoDto,out DbServerModel dbServer,out string creatingDbName);
-                if (createDbResult) {
-                    if(_tenantRepo.AddOrUpdateTenant(tenantInfoDto,out errMsg,false)) {
-                        realResult = true;
-                    }
+
+            //创建数据库
+            bool createDbResult = _dbOperaService.CreateTenantDb(ref tenantInfoDto, out DbServerModel dbServer, out string creatingDbName);
+            if (createDbResult) {
+                if (_tenantRepo.AttachDbServerToTenant(tenantInfoDto, dbServer,out errMsg)) {
+                    realResult = true;
+                }
+            }
+
+            if (!realResult) {
+                //回退
+                
+                if (!string.IsNullOrEmpty(creatingDbName)) {
+                    //开启线程删数据库
+                    Task.Run(() => {
+                        _dbOperaService.DeleteTenantDb(dbServer, creatingDbName);
+                    }).ConfigureAwait(false);
                 }
 
-                if (!realResult) {
-                    if (!string.IsNullOrEmpty(creatingDbName)) {
-                        //开启线程删数据库
-                        Task.Run(()=> {
-                            _dbOperaService.DeleteTenantDb(dbServer,creatingDbName);
-                        }).ConfigureAwait(false);
-                    }
-
-                    if(_tenantRepo.ExistTenant(tenantInfoDto.TenantDomain,tenantInfoDto.Identifier,out existedTenantInfo)) {
-                        _tenantRepo.RemoveTenant(existedTenantInfo.Id);
-                    }
+                if (_tenantRepo.ExistTenant(tenantInfoDto.TenantDomain, tenantInfoDto.Identifier, out existedTenantInfo)) {
+                    _tenantRepo.RemoveTenant(existedTenantInfo.Id);
                 }
             }
 

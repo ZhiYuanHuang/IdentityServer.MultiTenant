@@ -180,6 +180,7 @@ namespace IdentityServer.MultiTenant.Framework
 
             long startTicks = DateTime.Now.Ticks;
 
+            
             try {
                 cmd.Connection = connection;
                 cmd.Transaction = transaction;
@@ -189,7 +190,7 @@ namespace IdentityServer.MultiTenant.Framework
 
                 foreach (KeyValuePair<string, object> kvp in p) {
                     SQLiteParameter param = new SQLiteParameter();
-                    param.ParameterName = "?" + kvp.Key;
+                    param.ParameterName = "@" + kvp.Key;
                     param.Value = kvp.Value;
                     param.Direction = ParameterDirection.Input;
                     cmd.Parameters.Add(param);
@@ -295,7 +296,7 @@ namespace IdentityServer.MultiTenant.Framework
 
                 foreach (KeyValuePair<string, object> kvp in p) {
                     SQLiteParameter param = new SQLiteParameter();
-                    param.ParameterName = "?" + kvp.Key;
+                    param.ParameterName = "@" + kvp.Key;
                     param.Value = kvp.Value;
                     param.Direction = ParameterDirection.Input;
                     cmd.Parameters.Add(param);
@@ -399,6 +400,8 @@ namespace IdentityServer.MultiTenant.Framework
 
             long startTicks = DateTime.Now.Ticks;
 
+            //sql = sql.Replace('@', '?');
+
             try {
                 cmd.Connection = connection;
                 cmd.Transaction = transaction;
@@ -408,7 +411,7 @@ namespace IdentityServer.MultiTenant.Framework
 
                 foreach (KeyValuePair<string, object> kvp in p) {
                     SQLiteParameter param = new SQLiteParameter();
-                    param.ParameterName = "?" + kvp.Key;
+                    param.ParameterName = "@" + kvp.Key;
                     param.Value = kvp.Value;
                     param.Direction = ParameterDirection.Input;
                     cmd.Parameters.Add(param);

@@ -1,9 +1,11 @@
 ﻿using IdentityServer.MultiTenant.Dto;
 using IdentityServer.MultiTenant.Framework;
+using IdentityServer.MultiTenant.Framework.Enum;
 using IdentityServer.MultiTenant.Models;
 using IdentityServer.MultiTenant.Repository;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -72,7 +74,7 @@ namespace IdentityServer.MultiTenant.Service
                     return false;
                 }
 
-                var selectedDbServer= dbServerList.OrderBy(x => x.CreatedDbCount).ThenBy(x => x.ServerHost).First();
+                var selectedDbServer= dbServerList.Where(x=>x.EnableStatus==(int)EnableStatusEnum.Enable).OrderBy(x => x.CreatedDbCount).ThenBy(x => x.ServerHost).First();
                 dbServer = selectedDbServer;
 
                 var userpassword = selectedDbServer.Userpwd;
@@ -151,6 +153,27 @@ namespace IdentityServer.MultiTenant.Service
             } finally {
                 _mutex.ReleaseMutex();
             }
+        }
+
+        public static async Task<bool> CheckConnect(DbServerModel dbServer) {
+           
+            //"Data Source=127.0.0.1;Port=13306;User Id=devuser;Password=devpwd;Charset=utf8;",
+            string connStr = string.Format("Data Source={0};Port={1};User Id={2};Password={3};",dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd);
+            var connection=new MySqlConnection(connStr);
+
+            bool result = false;
+            try {
+                await connection.OpenAsync();
+                result = true;
+            }catch(Exception ex) {
+                result = false;
+            } finally {
+                connection?.Close();
+                connection?.Dispose();
+                connection = null;
+            }
+
+            return result;
         }
 
         private string RunCmd(List<string> innerCmdStrList) {

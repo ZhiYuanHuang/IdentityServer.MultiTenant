@@ -7,7 +7,7 @@ namespace IdentityServer.MultiTenant.Models
 {
     public class TenantDomainModel
     {
-        public int Id { get; set; }
+        public Int64 Id { get; set; }
         public string TenantDomain { get; set; }
         /// <summary>
         /// 启用状态

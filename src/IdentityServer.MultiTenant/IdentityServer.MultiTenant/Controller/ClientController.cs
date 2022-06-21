@@ -94,6 +94,21 @@ namespace IdentityServer.MultiTenant.Controller
             return new AppResponseDto(result);
         }
 
+        [HttpGet]
+        public AppResponseDto Delete([FromQuery] string clientId) {
+            IdentityServer4.EntityFramework.Entities.Client existedClient = _configurationDbContext.Clients
+                .Include(x => x.ClientSecrets)
+                .Include(x => x.Claims)
+                .Include(x => x.AllowedScopes)
+                .FirstOrDefault(x => x.ClientId == clientId);
+            bool result = false;
+            if (existedClient != null) {
+                _configurationDbContext.Clients.Remove(existedClient);
+                result = _configurationDbContext.SaveChanges() > 0;
+            }
+            return new AppResponseDto(result);
+        }
+
         [HttpPost]
         public async Task<AppResponseDto<string>> ResetSecret([FromForm]string clientId) {
             var existClient=await _configurationDbContext.Clients.Include(x => x.ClientSecrets).FirstOrDefaultAsync(x=>x.ClientId==clientId);

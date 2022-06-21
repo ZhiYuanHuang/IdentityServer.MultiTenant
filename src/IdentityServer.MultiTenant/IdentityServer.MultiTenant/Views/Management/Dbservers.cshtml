@@ -1,0 +1,165 @@
+﻿@*
+    For more information on enabling MVC for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
+*@
+
+@model List<IdentityServer.MultiTenant.Dto.DbServerDto>
+@{
+
+}
+
+<partial name="./Index" />
+<br />
+<div>
+    <table class="main-table table table-bordered">
+        <thead>
+            <tr>
+                <th>Host</th>
+                <th>Port</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var dbServer in Model) {
+                <tr>
+
+                    <td>@dbServer.ServerHost</td>
+                    <td>@dbServer.ServerPort</td>
+                    <td>
+                       <span>@(dbServer.ConnectSuccess?"连接成功":"连接失败")</span> 
+                    </td>
+                    <td>
+                        <div class="row">
+                            <div class="switch" data-on-label="SI" data-off-label="NO" style="margin-left:10px;margin-right:30px">
+                                <input type="checkbox" @(dbServer.EnableStatus == 1 ? "checked" : "") onchange="@Html.Raw(String.Format("changeStatus('{0}')",dbServer.Id))" />
+                            </div>
+                            <div>
+
+                                <input type="button" value="删除" class="btn btn-primary" onclick="@Html.Raw(String.Format("deleteDbServer('{0}')",dbServer.Id))" />
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+<br />
+<br />
+<div>
+    <h2>添加Domain</h2>
+    @*<p>使用 .needs-validation，它将在表单提交之后验证缺少的内容。这里需要添加一些 JavaScript 代码才能使代码正常工作。</p>
+        <p>可以点击提交按钮查看效果。</p>*@
+<form id="domain_form" class="needs-validation" novalidate>
+    <div class="form-group">
+        <label for="serverhost">ServerHost:</label>
+        <input type="text" class="form-control" id="serverhost" placeholder="Enter serverhost" name="serverhost" required>
+        <div class="valid-feedback">验证成功！</div>
+        <div class="invalid-feedback">请输入ServerHost！</div>
+    </div>
+    <div class="form-group">
+        <label for="serverport">ServerPort:</label>
+        <input type="text" class="form-control" id="serverport" placeholder="Enter serverport" name="serverport" required>
+        <div class="valid-feedback">验证成功！</div>
+        <div class="invalid-feedback">请输入ServerPort！</div>
+    </div>
+    <div class="form-group">
+        <label for="username">UserName:</label>
+        <input type="text" class="form-control" id="username" placeholder="Enter username" name="username" required>
+        <div class="valid-feedback">验证成功！</div>
+        <div class="invalid-feedback">请输入UserName！</div>
+    </div>
+    <div class="form-group">
+        <label for="userpassword">UserPassword:</label>
+        <input type="password" class="form-control" id="userpassword" placeholder="Enter userpassword" name="userpassword" required>
+        <div class="valid-feedback">验证成功！</div>
+        <div class="invalid-feedback">请输入UserPassword！</div>
+    </div>
+
+    <input type="button" class="btn btn-primary" value="提交" onclick="addDbServer()" />
+</form>
+</div>
+
+
+@section scripts
+{
+    @*<script src="~/js/sitecommon.js"></script>*@
+    <script>
+        function addDbServer() {
+            var jsonObj = {
+                "ServerHost": $('#serverhost').val(),
+                "ServerPort": parseInt($('#serverport').val()),
+                "UserName": $('#username').val(),
+                "Userpwd": $('#userpassword').val(),
+            };
+
+            $.ajax({
+                url: "/sys/api/DbServer/Add",
+                type: "post",
+                data: JSON.stringify(jsonObj),
+                contentType: "application/json",
+                dataType: "json",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        function changeStatus(dbServerId) {
+
+            $.ajax({
+                url: "/sys/api/DbServer/ChangeStatus?dbServerId=" + dbServerId,
+                type: "get",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        function deleteDbServer(dbServerIdValue) {
+
+            $.ajax({
+                url: "/sys/api/DbServer/Delete?dbServerId=" + dbServerIdValue,
+                type: "get",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        //alert(data.result);
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert('删除失败');
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+    </script>
+}

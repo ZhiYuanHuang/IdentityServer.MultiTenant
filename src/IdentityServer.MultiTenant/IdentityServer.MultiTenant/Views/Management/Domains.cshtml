@@ -1,0 +1,150 @@
+﻿@*
+    For more information on enabling MVC for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
+*@
+
+@model List<IdentityServer.MultiTenant.Models.TenantDomainModel>
+@{
+
+}
+
+<partial name="./Index" />
+<br />
+<div>
+    <table class="main-table table table-bordered">
+        <thead>
+            <tr>
+                <th>TenantDomain</th>
+                <th>Description</th>
+                <th>Enable/Disable</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var tenantDomain in Model) {
+                <tr>
+
+                    <td>@tenantDomain.TenantDomain</td>
+                    <td>@tenantDomain.Description</td>
+                    <td>
+                        <div>
+                            <div class="switch" data-on-label="SI" data-off-label="NO">
+                                <input type="checkbox" @(tenantDomain.EnableStatus==1?"checked":"") onchange="@Html.Raw(String.Format("changeStatus('{0}')",tenantDomain.TenantDomain))"/>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div>
+                            <input type="button" value="删除" class="btn btn-primary" onclick="@Html.Raw(String.Format("deleteDomain('{0}')",tenantDomain.TenantDomain))" />
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+<br />
+<br />
+<div>
+    <h2>添加Domain</h2>
+    @*<p>使用 .needs-validation，它将在表单提交之后验证缺少的内容。这里需要添加一些 JavaScript 代码才能使代码正常工作。</p>
+        <p>可以点击提交按钮查看效果。</p>*@
+    <form id="domain_form" class="needs-validation" novalidate>
+        <div class="form-group">
+            <label for="tenantdomain">TenantDomain:</label>
+            <input type="text" class="form-control" id="tenantdomain" placeholder="Enter tenantdomain" name="tenantdomain" required>
+            <div class="valid-feedback">验证成功！</div>
+            <div class="invalid-feedback">请输入TenantDomain！</div>
+        </div>
+       
+        <div class="form-group">
+            <label for="description">Description:</label>
+            <input type="text" class="form-control" id="description" placeholder="Enter description" name="description" required>
+            <div class="valid-feedback">验证成功！</div>
+            <div class="invalid-feedback">请输入Description！</div>
+        </div>
+
+        <input type="button" class="btn btn-primary" value="提交" onclick="addDomain()" />
+    </form>
+</div>
+
+
+@section scripts
+{
+    @*<script src="~/js/sitecommon.js"></script>*@
+    <script>
+        function addDomain() {
+            var jsonObj = {
+                "TenantDomain": $('#tenantdomain').val(),
+                "Description": $('#description').val(),
+            };
+
+            $.ajax({
+                url: "/sys/api/Domain/AddOrUpdate",
+                type: "post",
+                data: JSON.stringify(jsonObj),
+                contentType: "application/json",
+                dataType: "json",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        function changeStatus(domainValue) {
+
+            $.ajax({
+                url: "/sys/api/Domain/ChangeStatus?tenantDomain=" + domainValue,
+                type: "get",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        function deleteDomain(domainValue) {
+
+            $.ajax({
+                url: "/sys/api/Domain/Delete?tenantDomain=" + domainValue,
+                type: "get",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        //alert(data.result);
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert('删除失败');
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+    </script>
+}

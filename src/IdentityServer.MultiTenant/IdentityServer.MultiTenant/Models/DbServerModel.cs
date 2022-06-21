@@ -7,7 +7,7 @@ namespace IdentityServer.MultiTenant.Models
 {
     public class DbServerModel
     {
-        public int Id { get; set; }
+        public Int64 Id { get; set; }
         public string ServerHost { get; set; }
         public int ServerPort { get; set; }
         public string UserName { get; set; }
