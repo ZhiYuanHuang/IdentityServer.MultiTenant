@@ -1,0 +1,184 @@
+﻿@*
+    For more information on enabling MVC for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
+*@
+@model TenantManageViewModel
+@{
+}
+
+<partial name="./Index" />
+<br />
+<div>
+    <div  class="d-flex justify-content-between">
+        <div></div>
+        <div>
+            <select id="select_tenantdomain" name="select_tenantdomain" onchange="@Html.Raw(String.Format("selectDomain(this.options[this.options.selectedIndex].value)"))" style="width: 150px;">
+                <option style='display: none'></option>
+                @foreach (var item in Model.TenantDomainList) {
+                    if (string.Compare(item.TenantDomain, Model.SelectTenantDomain,true) == 0) {
+                        <option selected="selected" value="@item.TenantDomain">@item.TenantDomain</option>
+                    } else {
+                        <option value="@item.TenantDomain">@item.TenantDomain</option>
+                    }
+                }
+            </select>
+        </div>
+    </div>
+    <div>
+        <table class="main-table table table-bordered">
+            <thead>
+                <tr>
+                    <th>Identifier</th>
+                    <th>TenantDomain</th>
+                    <th>Name</th>
+                    <th>GuidId</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var tenantInfo in Model.TenantInfoList) {
+                    <tr>
+
+                        <td>@tenantInfo.Identifier</td>
+                        <td>@tenantInfo.TenantDomain</td>
+                        <td>@tenantInfo.Name</td>
+                        <td>@tenantInfo.GuidId</td>
+                        <td>@tenantInfo.Description</td>
+                        <td>
+                            <span>@(tenantInfo.ConnectSuccess?"连接成功":"连接失败")</span>
+                        </td>
+                        <td>
+                            <div class="row">
+                                <div class="switch" data-on-label="SI" data-off-label="NO" style="margin-left:10px;margin-right:30px">
+                                    <input type="checkbox" @(tenantInfo.EnableStatus == 1 ? "checked" : "") onchange="@Html.Raw(String.Format("changeStatus('{0}','{1}')",tenantInfo.TenantDomain,tenantInfo.Identifier))" />
+                                </div>
+                                <div>
+                                    <input type="button" value="删除" class="btn btn-primary" onclick="@Html.Raw(String.Format("deleteTenant('{0}','{1}')",tenantInfo.TenantDomain,tenantInfo.Identifier))" />
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+<br />
+<br />
+<div>
+    <h2>创建Tenant</h2>
+    @*<p>使用 .needs-validation，它将在表单提交之后验证缺少的内容。这里需要添加一些 JavaScript 代码才能使代码正常工作。</p>
+        <p>可以点击提交按钮查看效果。</p>*@
+    <form id="tenant_form" class="needs-validation" novalidate>
+        <div class="form-group">
+            <label for="identifier">Identifier:</label>
+            <input type="text" class="form-control" id="identifier" placeholder="Enter identifier" name="identifier" required>
+            <div class="valid-feedback">验证成功！</div>
+            <div class="invalid-feedback">请输入Identifier！</div>
+        </div>
+        <div class="form-group">
+            <label for="tenantDomain">TenantDomain:</label>
+            <select id="tenantdomain" name="tenantdomain" style="width: 150px;">
+                <option style='display: none'></option>
+                @foreach (var item in Model.TenantDomainList) {
+                    <option value="@item.TenantDomain">@item.TenantDomain</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="tenantname">TenantName:</label>
+            <input type="text" class="form-control" id="tenantname" placeholder="Enter tenantname" name="tenantname" required>
+        </div>
+        <div class="form-group">
+            <label for="description">Description:</label>
+            <input type="text" class="form-control" id="description" placeholder="Enter description" name="description" required>
+        </div>
+
+        <input type="button" class="btn btn-primary" value="提交" onclick="createTenant()" />
+    </form>
+</div>
+
+@section scripts{ 
+    <script>
+        function selectDomain(tenantDomain) {
+            window.location.href = "/sys/management/Tenants?tenantDomain=" + tenantDomain;
+        }
+
+        function createTenant() {
+            var jsonObj = {
+                "Identifier": $('#identifier').val(),
+                "TenantDomain": $('#tenantdomain').val(),
+                "Name": $('#tenantname').val(),
+                "Description": $('#description').val(),
+            }
+
+            $.ajax({
+                url: "/sys/api/SysTenant/CreateTenant",
+                type: "post",
+                data: JSON.stringify(jsonObj),
+                contentType: "application/json",
+                dataType: "json",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        function changeStatus(tenantDomain, identifier) {
+
+            $.ajax({
+                url: "/sys/api/SysTenant/ChangeStatus?tenantDomain=" + tenantDomain + "&Identifier=" + identifier,
+                type: "get",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        function deleteTenant(tenantDomain, identifier) {
+
+            $.ajax({
+                url: "/sys/api/SysTenant/Delete?tenantDomain=" + tenantDomain + "&Identifier=" + identifier,
+                type: "get",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        //alert(data.result);
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert('删除失败');
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+    </script>
+}

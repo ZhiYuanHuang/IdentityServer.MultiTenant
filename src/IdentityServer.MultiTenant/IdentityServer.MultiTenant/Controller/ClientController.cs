@@ -51,6 +51,9 @@ namespace IdentityServer.MultiTenant.Controller
                     };
                 }
                 client.AccessTokenLifetime = 60 * 60 * 24 * 15;
+                client.AllowedGrantTypes = new List<IdentityServer4.EntityFramework.Entities.ClientGrantType>() { 
+                    new IdentityServer4.EntityFramework.Entities.ClientGrantType(){ GrantType=GrantType.ClientCredentials}
+                };
                 for(int i = 0; i < client.ClientSecrets.Count; i++) {
                     client.ClientSecrets[i].Value = client.ClientSecrets[i].Value.Sha256();
                 }
@@ -59,35 +62,25 @@ namespace IdentityServer.MultiTenant.Controller
                     client.AllowedScopes = new List<IdentityServer4.EntityFramework.Entities.ClientScope>();
                 }
 
-                if(client.AllowedScopes.FirstOrDefault(x=>string.CompareOrdinal( x.Scope,"idsmul.addtenant")==0)==null) {
+                if(client.AllowedScopes.FirstOrDefault(x=>string.Compare( x.Scope,"idsmul.addtenant",true)==0)==null) {
                     client.AllowedScopes.Add(new IdentityServer4.EntityFramework.Entities.ClientScope() { Scope= "idsmul.addtenant" });
                 }
 
                 _configurationDbContext.Clients.Add(client);
                 result = _configurationDbContext.SaveChanges() > 0;
             } else {
-                IDbContextTransaction dbContextTransaction = null;
 
                 try {
                     existedClient.AllowOfflineAccess = true;
                     existedClient.ClientName = client.ClientName;
                     existedClient.Description = client.Description;
-                    dbContextTransaction = _configurationDbContext.Database.BeginTransaction();
-                    existedClient.AllowedScopes.Clear();
                     result = _configurationDbContext.SaveChanges() > 0;
-                    if (result) {
-                        existedClient.AllowedScopes = client.AllowedScopes;
-                    }
-                    _configurationDbContext.SaveChanges();
-                    dbContextTransaction.Commit();
                     result = true;
 
                 }catch(Exception ex) {
-                    dbContextTransaction?.Rollback();
                     result = false;
 
                 } finally {
-                    dbContextTransaction?.Dispose();
                 }
             }
 

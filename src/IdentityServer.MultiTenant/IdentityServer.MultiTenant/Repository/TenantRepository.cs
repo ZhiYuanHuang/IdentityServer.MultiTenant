@@ -18,12 +18,36 @@ namespace IdentityServer.MultiTenant.Repository
             _logger = logger;
         }
 
+        public List<TenantInfoDto> GetTenantInfoDtos(string tenantDomain) {
+            Dictionary<string, object> param = new Dictionary<string, object>();
+            string sql = @"Select a.*,b.TenantDomain,b.EnableStatus As DomainEnableStatus From TenantInfo a 
+                            Inner Join TenantDomain b
+                                On b.Id=a.TenantDomainId";
+            if (!string.IsNullOrEmpty(tenantDomain)) {
+                sql += " Where b.TenantDomain=@domain ";
+                param["domain"] = tenantDomain;
+            }
+            sql += " order by b.TenantDomain ";
+
+            List<TenantInfoDto> list = null;
+            try {
+                list=_dbUtil.Slave.QueryList<TenantInfoDto>(sql,param);
+            }
+            catch(Exception ex) {
+                _logger.LogError(ex,"query tenant list error");
+            }
+
+            return list;
+        }
+
         public bool ExistTenant(string domain,string tenantId,out TenantInfoDto tenantInfoDto) {
             bool exist = false;
 
-            string sql = @"Select a.*,b.TenantDomain,b.EnableStatus As DomainEnableStatus From TenantInfo a 
+            string sql = @"Select a.*,b.TenantDomain,b.EnableStatus As DomainEnableStatus,c.DbServerId From TenantInfo a 
                             Inner Join TenantDomain b
                                 On b.Id=a.TenantDomainId
+                            Left Join TenantDbServerRef c
+                                On c.TenantId=a.Id
                             Where a.Identifier=@identifier And b.TenantDomain=@domain";
             Dictionary<string, object> param = new Dictionary<string, object>() {
                 { "identifier",tenantId},
@@ -130,7 +154,7 @@ namespace IdentityServer.MultiTenant.Repository
 
                     string updateSql = "Update TenantInfo Set GuidId=@guidId,EnableStatus=@enableStatus,Name=@name,ConnectionString=@connStr,EncryptedIdsConnectionString=@encryptConnStr,UpdateTime=@dtNow,Description=@desc Where Id=@id";
                     string insertSql = @"Insert Into TenantInfo (GuidId,Identifier,TenantDomainId,EnableStatus,Name,ConnectionString,EncryptedIdsConnectionString,Description,CreateTime)
-                                            Value (@guidId,@identifier,@tenantDomainId,1,@name,@connStr,@encryptConnStr,@desc,@dtNow)";
+                                            Values (@guidId,@identifier,@tenantDomainId,1,@name,@connStr,@encryptConnStr,@desc,@dtNow)";
 
                     if (existTenant != null) {
                         if (isAdd) {   //real to add
@@ -230,6 +254,13 @@ namespace IdentityServer.MultiTenant.Repository
             }catch(Exception ex) {
                 _logger.LogError(ex,"remove tenant error");
             }
+        }
+
+        public void ChangeTenantStatus(Int64 tenantId, int enableStatus) {
+            _dbUtil.Master.ExecuteNonQuery("Update TenantInfo Set EnableStatus=@enableStatus Where Id=@id", new Dictionary<string, object>() {
+                { "id",tenantId},
+                { "enableStatus",enableStatus}
+            });
         }
     }
 }

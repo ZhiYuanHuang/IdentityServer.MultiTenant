@@ -36,13 +36,16 @@
   </ItemGroup>
   
   <ItemGroup>
-    <None Update="empty.identityserver.db">
+    <None Update="Db\ids_sample.db">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="sys.identityserver.db">
+    <None Update="Db\empty.identityserver.db">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="tenantstore.mulids.db">
+    <None Update="Db\sys.identityserver.db">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Db\tenantstore.mulids.db">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

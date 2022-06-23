@@ -50,7 +50,7 @@ namespace IdentityServer.MultiTenant.Controller
             }
 
             var list= _tenantRepo.GetTenantDomains(tenantDomain);
-            if(!list.Any() || string.CompareOrdinal(list[0].TenantDomain, tenantDomain) != 0) {
+            if(!list.Any() || string.Compare(list[0].TenantDomain, tenantDomain,true) != 0) {
                 return new AppResponseDto(false) { ErrorMsg="domain 不存在"};
             }
 

@@ -92,7 +92,7 @@ namespace IdentityServer.MultiTenant
                     realIdsConnStr = emptyConnectionString;
                 } else {
                     realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
-                    if (string.IsNullOrEmpty(realIdsConnStr)) {
+                    if (string.IsNullOrEmpty(realIdsConnStr) && !string.IsNullOrEmpty(contextTenant.TenantInfo.EncryptedIdsConnectionString)) {
                         var encryptService = provider.GetRequiredService<EncryptService>();
                         string encryptedIdsConnStr = encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
                         realIdsConnStr = encryptedIdsConnStr;
@@ -124,6 +124,11 @@ namespace IdentityServer.MultiTenant
                 options.InputLengthRestrictions.Scope = 2000;
 
                 options.Authentication.CookieSameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+
+                string publishHost = Configuration.GetValue<string>("PublishHost");
+                int publishPort = Configuration.GetValue<int>("PublishPort");
+                options.IssuerUri = $"http://{publishHost}:{publishPort}";
+               
             })
                 //.AddInMemoryIdentityResources(Config.IdentityResources)
                 //.AddInMemoryApiScopes(Config.ApiScopes)
@@ -136,7 +141,7 @@ namespace IdentityServer.MultiTenant
                             realIdsConnStr = emptyConnectionString;
                         } else {
                             realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
-                            if (string.IsNullOrEmpty(realIdsConnStr)) {
+                            if (string.IsNullOrEmpty(realIdsConnStr) && !string.IsNullOrEmpty(contextTenant.TenantInfo.EncryptedIdsConnectionString)) {
                                 var encryptService = provider.GetRequiredService<EncryptService>();
                                 string encryptedIdsConnStr = encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
                                 realIdsConnStr = encryptedIdsConnStr;
@@ -159,7 +164,7 @@ namespace IdentityServer.MultiTenant
                             realIdsConnStr = emptyConnectionString;
                         } else {
                             realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
-                            if (string.IsNullOrEmpty(realIdsConnStr)) {
+                            if (string.IsNullOrEmpty(realIdsConnStr) && !string.IsNullOrEmpty(contextTenant.TenantInfo.EncryptedIdsConnectionString)) {
                                 var encryptService = provider.GetRequiredService<EncryptService>();
                                 string encryptedIdsConnStr = encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
                                 realIdsConnStr = encryptedIdsConnStr;
@@ -214,7 +219,7 @@ namespace IdentityServer.MultiTenant
                     builder.AddAuthenticationSchemes("Bearer");
                     builder.RequireAuthenticatedUser();
                     builder.RequireClaim("aud", "idsmul");
-                    builder.RequireScope("idsmul.addtenant");
+                    builder.RequireScope("idsmul.createtenant");
                 });
 
 
@@ -247,6 +252,7 @@ namespace IdentityServer.MultiTenant
                     string publishHost = Configuration.GetValue<string>("PublishHost");
                     int publishPort = Configuration.GetValue<int>("PublishPort");
                     opts.Authority = $"http://{publishHost}:{publishPort}";// "http://localhost:5000";
+                    opts.Audience = "idsmul";
                 });
 
             services.Configure<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme, options => {
@@ -279,7 +285,7 @@ namespace IdentityServer.MultiTenant
             services.AddSingleton<MysqlDbOperaService>();
             services.AddSingleton<SqliteDbOperaService>();
             services.AddSingleton<ITenantDbOperation>(provider => { 
-                if(string.CompareOrdinal(Configuration["SampleDb:DbType"], "mysql")==0) {
+                if(string.Compare(Configuration["SampleDb:DbType"], "mysql",true)==0) {
                     return provider.GetRequiredService<MysqlDbOperaService>();
                 } else {
                     return provider.GetRequiredService<SqliteDbOperaService>();

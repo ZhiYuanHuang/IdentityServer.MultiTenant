@@ -31,17 +31,28 @@ namespace IdentityServer.MultiTenant.Controller
         [HttpPost]
         [Authorize(Policy = "manageTenantPolicy")] //(Policy  = "sysManagePolicy")
         public AppResponseDto CreateTenant([FromBody]TenantInfoDto tenantInfoDto) {
+            if (string.IsNullOrEmpty(tenantInfoDto.Identifier)) {
+                return new AppResponseDto(false) { ErrorMsg="tenant identifier can not be empty"};
+            }
 
-            bool isExist= _tenantRepo.ExistTenant(tenantInfoDto.TenantDomain,tenantInfoDto.Identifier,out TenantInfoDto existedTenantInfo);
+            string requestHost= Request.Host.Value;
+            int tmpStartIndx = requestHost.IndexOf('.');
+            int tmpEndIndex = requestHost.LastIndexOf(':');
+            string tenantDomain = requestHost.Substring(tmpStartIndx+1,tmpEndIndex-tmpStartIndx-1);
+
+            bool isExist= _tenantRepo.ExistTenant(tenantDomain, tenantInfoDto.Identifier,out TenantInfoDto existedTenantInfo);
 
             if (isExist) {
                 return new AppResponseDto(false) { ErrorMsg="tenant existed"};
             }
 
+            tenantInfoDto.GuidId = Guid.NewGuid().ToString("N");
             //先插tenant基本信息
             if(!_tenantRepo.AddOrUpdateTenant(tenantInfoDto,out string errMsg, true)) {
                 return new AppResponseDto(false) { ErrorMsg=errMsg};
             }
+
+            _tenantRepo.ExistTenant(tenantDomain, tenantInfoDto.Identifier, out tenantInfoDto);
 
             bool realResult = false;
 
@@ -63,7 +74,7 @@ namespace IdentityServer.MultiTenant.Controller
                     }).ConfigureAwait(false);
                 }
 
-                if (_tenantRepo.ExistTenant(tenantInfoDto.TenantDomain, tenantInfoDto.Identifier, out existedTenantInfo)) {
+                if (_tenantRepo.ExistTenant(tenantDomain, tenantInfoDto.Identifier, out existedTenantInfo)) {
                     _tenantRepo.RemoveTenant(existedTenantInfo.Id);
                 }
             }

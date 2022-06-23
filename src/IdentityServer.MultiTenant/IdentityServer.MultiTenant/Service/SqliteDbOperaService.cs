@@ -1,9 +1,12 @@
 ﻿using IdentityServer.MultiTenant.Dto;
 using IdentityServer.MultiTenant.Models;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Data.SQLite;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant.Service
 {
@@ -17,10 +20,23 @@ namespace IdentityServer.MultiTenant.Service
         private readonly string _sampleDb_dbFilePath;
         private readonly string _tenantDb_dbFileDir;
 
-        public SqliteDbOperaService(IConfiguration config,  ILogger<SqliteDbOperaService> logger, EncryptService encryptService) { 
+        public SqliteDbOperaService(IConfiguration config,  ILogger<SqliteDbOperaService> logger, EncryptService encryptService,IWebHostEnvironment hostingEnvironment) { 
             _logger = logger;
-            _sampleDb_dbFilePath = config["SampleDb:DbFilePath"];
-            _tenantDb_dbFileDir = config["SampleDb:TenantFileDir"];
+            string dbDirPath= config["SampleDb:DbDirPath"];
+            if (string.IsNullOrEmpty(dbDirPath)) {
+                dbDirPath =System.IO.Path.Combine( hostingEnvironment.ContentRootPath,"Db");
+            }
+            string sampleDbFileName = config["SampleDb:DbFileName"];
+
+            _sampleDb_dbFilePath = System.IO.Path.Combine(dbDirPath,sampleDbFileName);
+            _logger.LogInformation($"_sampleDb_dbFilePath:{_sampleDb_dbFilePath}");
+
+            _tenantDb_dbFileDir = config["SampleDb:TenantDbDirPath"];
+            if (string.IsNullOrEmpty(_tenantDb_dbFileDir)) {
+                _tenantDb_dbFileDir= System.IO.Path.Combine(hostingEnvironment.ContentRootPath, "Db","tenant");
+            }
+
+            _logger.LogInformation($"_tenantDb_dbFileDir:{_tenantDb_dbFileDir}");
         }
 
         public bool CreateTenantDb(ref TenantInfoDto tenantInfoDto, out DbServerModel dbServer, out string creatingDbName) {
@@ -41,7 +57,7 @@ namespace IdentityServer.MultiTenant.Service
             _mutex.WaitOne();
 
             try {
-                if (System.IO.Directory.Exists(_tenantDb_dbFileDir)) {
+                if (!System.IO.Directory.Exists(_tenantDb_dbFileDir)) {
                     System.IO.Directory.CreateDirectory(_tenantDb_dbFileDir);
                 }
 
@@ -87,7 +103,7 @@ namespace IdentityServer.MultiTenant.Service
 
                     return false;
                 }
-                tenantInfoDto.ConnectionString = creatingDbName;
+                tenantInfoDto.ConnectionString = $"Data Source={dbFilePath};";
 
                 result = true;
             } catch (Exception ex) {
@@ -100,17 +116,72 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
-        public void DeleteTenantDb(DbServerModel dbServer, string toDeleteDb) {
-
+        public bool DeleteTenantDb(DbServerModel dbServer, string toDeleteDb) {
+            bool result = false;
             string dbFilePath = System.IO.Path.Combine(_tenantDb_dbFileDir, toDeleteDb);
 
             if (System.IO.File.Exists(dbFilePath)) {
                 try {
                     System.IO.File.Delete(dbFilePath);
-                } catch {
+                    result = true;
+                } catch(Exception ex) {
+                    _logger.LogError(ex,"delete tenant db error");
                 }
             }
-               
+
+            return result;
+        }
+
+        public bool DeleteTenantDb(DbServerModel dbServer, TenantInfoDto tenantInfo,out string errMsg) {
+            errMsg = string.Empty;
+            bool result = false;
+
+            int tmpIndex = tenantInfo.ConnectionString.IndexOf("Data Source=");
+            if(tmpIndex==1) {
+                errMsg = "can not find db file";
+                return false;
+            }
+            int tmpEndIndex = tenantInfo.ConnectionString.IndexOf(';', tmpIndex);
+            
+            string dbFilePath = tenantInfo.ConnectionString.Substring(tmpIndex + 12, tmpEndIndex - tmpIndex - 12); ;
+
+            try {
+                if (System.IO.File.Exists(dbFilePath)) {
+                    System.IO.File.Delete(dbFilePath);
+                    result = true;
+                } else {
+                    errMsg = "tenent db file not exists";
+                }
+            }
+            catch(Exception ex) {
+                result = false;
+                errMsg = ex.Message;
+                _logger.LogError(ex, "DeleteTenantDb error");
+            }
+
+            return result;
+        }
+
+        public async Task<bool> CheckConnect(string connStr) {
+            if (string.IsNullOrEmpty(connStr)) {
+                return false;
+            }
+            //"Data Source=127.0.0.1;Port=13306;User Id=devuser;Password=devpwd;Charset=utf8;",
+            SQLiteConnection connection = new SQLiteConnection(connStr);
+
+            bool result = false;
+            try {
+                await connection.OpenAsync();
+                result = true;
+            } catch (Exception ex) {
+                result = false;
+            } finally {
+                connection?.Close();
+                connection?.Dispose();
+                connection = null;
+            }
+
+            return result;
         }
     }
 }

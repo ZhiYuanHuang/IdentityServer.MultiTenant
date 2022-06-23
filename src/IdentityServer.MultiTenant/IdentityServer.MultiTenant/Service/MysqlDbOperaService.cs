@@ -3,6 +3,7 @@ using IdentityServer.MultiTenant.Framework;
 using IdentityServer.MultiTenant.Framework.Enum;
 using IdentityServer.MultiTenant.Models;
 using IdentityServer.MultiTenant.Repository;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MySql.Data.MySqlClient;
@@ -35,12 +36,15 @@ namespace IdentityServer.MultiTenant.Service
 
         private readonly EncryptService _encryptService;
 
-        public MysqlDbOperaService(IConfiguration config,  DbServerRepository dbServerRepository,ILogger<MysqlDbOperaService> logger,EncryptService encryptService) {
+        public MysqlDbOperaService(IConfiguration config,  DbServerRepository dbServerRepository,ILogger<MysqlDbOperaService> logger,EncryptService encryptService, IWebHostEnvironment hostingEnvironment) {
             _encryptService = encryptService;
             _dbServerRepository = dbServerRepository;
             _logger = logger;
 
             _mysqlBinDirPath = config["MysqlBinDirPath"];
+            if (string.IsNullOrEmpty(_mysqlBinDirPath)) {
+                _mysqlBinDirPath = System.IO.Path.Combine(hostingEnvironment.ContentRootPath, "MysqlExe");
+            }
 
             _sampleDb_serverHost = config["SampleDb:Host"];
             _sampleDb_serverPort = int.Parse(config["SampleDb:Port"]);
@@ -74,21 +78,35 @@ namespace IdentityServer.MultiTenant.Service
                     return false;
                 }
 
-                var selectedDbServer= dbServerList.Where(x=>x.EnableStatus==(int)EnableStatusEnum.Enable).OrderBy(x => x.CreatedDbCount).ThenBy(x => x.ServerHost).First();
-                dbServer = selectedDbServer;
+                var enableDbServerList= dbServerList.Where(x=>x.EnableStatus==(int)EnableStatusEnum.Enable).OrderBy(x => x.CreatedDbCount).ThenBy(x => x.ServerHost).ToList();
+                DbServerModel selectedDbServer = null;
 
-                var userpassword = selectedDbServer.Userpwd;
-                if (string.IsNullOrEmpty(userpassword)) {
-                    //解密
-                    userpassword= _encryptService.Decrypt_Aes(selectedDbServer.EncryptUserpwd);
-                    selectedDbServer.Userpwd = userpassword;
+                foreach (var tmpDbServer in enableDbServerList) {
+
+                    var userpassword = tmpDbServer.Userpwd;
+                    if (string.IsNullOrEmpty(userpassword) && !string.IsNullOrEmpty(tmpDbServer.EncryptUserpwd)) {
+                        //解密
+                        userpassword = _encryptService.Decrypt_Aes(tmpDbServer.EncryptUserpwd);
+                        tmpDbServer.Userpwd = userpassword;
+                    }
+
+                    if (CheckConnect(tmpDbServer).Result) {
+                        selectedDbServer = tmpDbServer;
+                        break;
+                    }
                 }
-               
+
+                if (selectedDbServer == null) {
+                    _logger.LogError("CreateTenantDb error,errmsg:have not connect success db server");
+                    return false;
+                }
+
+                dbServer = selectedDbServer;
 
                 creatingDbName = $"ids_{tenantInfoDto.TenantDomain}_{tenantInfoDto.Identifier}";
 
                 List<string> creatTenantDbCmdList = new List<string>() {
-                    string.Format("mysql -h{0} -P{1} -u{2} -p{3}",selectedDbServer.ServerHost,selectedDbServer.ServerPort,selectedDbServer.UserName,userpassword),
+                    string.Format("mysql -h{0} -P{1} -u{2} -p{3}",selectedDbServer.ServerHost,selectedDbServer.ServerPort,selectedDbServer.UserName,selectedDbServer.Userpwd),
                     string.Format("create database `{0}` default character set utf8mb4 collate utf8mb4_general_ci;",creatingDbName),
                     "exit"
                 };
@@ -102,7 +120,7 @@ namespace IdentityServer.MultiTenant.Service
                 List<string> copyCmdList = new List<string>() {
                     string.Format("mysqldump {0} -h{1} -P{2} -u{3} -p{4} --add-drop-table --column-statistics=0 | mysql {5} -h{6} -P{7} -u{8} -p{9}",
                     _sampleDb_dbname,_sampleDb_serverHost,_sampleDb_serverPort,_sampleDb_username,_sampleDb_userpassword,
-                    creatingDbName,dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,userpassword
+                    creatingDbName,selectedDbServer.ServerHost,selectedDbServer.ServerPort,selectedDbServer.UserName,selectedDbServer.Userpwd
                     ),
                 };
 
@@ -130,9 +148,9 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
-        public void DeleteTenantDb(DbServerModel dbServer,string toDeleteDb) {
-            
+        public bool DeleteTenantDb(DbServerModel dbServer,string toDeleteDb) {
 
+            bool result = false;
             _mutex.WaitOne();
             try {
                 //string fileName = "mysql";
@@ -144,19 +162,70 @@ namespace IdentityServer.MultiTenant.Service
                 };
 
                 string executeResult = RunCmd(deleteTenantDbCmdList);
-
-                if (string.IsNullOrEmpty(executeResult)) {
-                    Task.Run(() => { _dbServerRepository.AddDbCountByDbserver(dbServer.Id,false); }).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error", StringComparison.OrdinalIgnoreCase)) {
+                    _logger.LogError($"delete tenant db,error:{executeResult}");
+                    return false;
                 }
+
+                result = true;
+                Task.Run(() => { _dbServerRepository.AddDbCountByDbserver(dbServer.Id, false); }).ConfigureAwait(false);
             } catch(Exception ex) {
                 _logger.LogError(ex, $"delete tenant db {dbServer?.ServerHost} {toDeleteDb} error");
             } finally {
                 _mutex.ReleaseMutex();
             }
+
+            return result;
+        }
+
+        public bool DeleteTenantDb(DbServerModel dbServer, TenantInfoDto tenantInfo,out string errMsg) {
+            errMsg = string.Empty;
+            if (dbServer == null) {
+                errMsg = "tenant dbserver is null";
+                return false;
+            }
+
+            if(string.IsNullOrEmpty(dbServer.Userpwd) && !string.IsNullOrEmpty(dbServer.EncryptUserpwd)) {
+                dbServer.Userpwd = _encryptService.Decrypt_Aes(dbServer.EncryptUserpwd);
+            }
+
+            if (!CheckConnect(dbServer).Result) {
+                errMsg = $"db {dbServer.ServerHost}-{dbServer.ServerPort} can not connect";
+                return false;
+            }
+
+            string connStr = tenantInfo.ConnectionString;
+            if (string.IsNullOrEmpty(connStr) && !string.IsNullOrEmpty(tenantInfo.EncryptedIdsConnectionString)) {
+                connStr = _encryptService.Decrypt_Aes(tenantInfo.EncryptedIdsConnectionString);
+            }
+            if (string.IsNullOrEmpty(connStr)) {
+                errMsg = "db connstr is empty";
+                return false;
+            }
+
+            int tmpIndex= connStr.IndexOf("Database=");
+            if (tmpIndex == -1) {
+                errMsg = "can not find database";
+                return false;
+            }
+
+            int tmpEndIndex = connStr.IndexOf(';',tmpIndex);
+            if (tmpEndIndex == -1) {
+                errMsg = "can not find database";
+                return false;
+            }
+
+            string dbName = connStr.Substring(tmpIndex + 9, tmpEndIndex - tmpIndex - 9);
+            if (string.IsNullOrEmpty(dbName)) {
+                errMsg = "can not find database";
+                return false;
+            }
+
+            return DeleteTenantDb(dbServer,dbName);
         }
 
         public static async Task<bool> CheckConnect(DbServerModel dbServer) {
-           
+
             //"Data Source=127.0.0.1;Port=13306;User Id=devuser;Password=devpwd;Charset=utf8;",
             string connStr = string.Format("Data Source={0};Port={1};User Id={2};Password={3};",dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd);
             var connection=new MySqlConnection(connStr);
@@ -166,6 +235,29 @@ namespace IdentityServer.MultiTenant.Service
                 await connection.OpenAsync();
                 result = true;
             }catch(Exception ex) {
+                result = false;
+            } finally {
+                connection?.Close();
+                connection?.Dispose();
+                connection = null;
+            }
+
+            return result;
+        }
+
+        public async Task<bool> CheckConnect(string connStr) {
+            if (string.IsNullOrEmpty(connStr)) {
+                return false;
+            }
+
+            //"Data Source=127.0.0.1;Port=13306;User Id=devuser;Password=devpwd;Charset=utf8;",
+            var connection = new MySqlConnection(connStr);
+
+            bool result = false;
+            try {
+                await connection.OpenAsync();
+                result = true;
+            } catch (Exception ex) {
                 result = false;
             } finally {
                 connection?.Close();
@@ -201,8 +293,8 @@ namespace IdentityServer.MultiTenant.Service
                 foreach (var cmd in innerCmdStrList) {
                     p.StandardInput.WriteLine(cmd);
 
-                    if (string.CompareOrdinal(cmd, "exit") == 0) {
-                        Thread.Sleep(1);
+                    if (string.Compare(cmd, "exit",true) == 0) {
+                        Thread.Sleep(30);
                     }else {
                         Thread.Sleep(100);
                     }

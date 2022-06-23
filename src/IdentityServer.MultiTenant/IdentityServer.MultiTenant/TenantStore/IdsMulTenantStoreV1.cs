@@ -9,6 +9,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -46,9 +47,14 @@ namespace IdentityServer.MultiTenant.TenantStore
         }
 
         public async Task<TTenantInfo> TryGetByIdentifierAsync(string identifier) {
-            if(string.CompareOrdinal(identifier,MulTenantConstants.SysTenant)==0) {
+            if(string.Compare(identifier,MulTenantConstants.SysTenant,true)==0) {
                 var sysTenant= new ExtendTenantInfo() { Id=identifier,Identifier=identifier,Name="MulIdsSysAdmin",ConnectionString=_sysIdsConnStr};
                 return sysTenant as TTenantInfo;
+            }
+
+            if (MulTenantConstants.ManageTenantList.FirstOrDefault(x => string.Compare(x, identifier,true) == 0) != null) {
+                var managerTenant = new ExtendTenantInfo() { Id = identifier, Identifier = identifier, Name = "MulIdsManager", ConnectionString = _sysIdsConnStr };
+                return managerTenant as TTenantInfo;
             }
 
             string tenantCacheKey = string.Format(CacheKey.Tenant_Format, keyPrefix, _contextSystem.SystemDomain, identifier);
