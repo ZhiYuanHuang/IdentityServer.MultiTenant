@@ -39,8 +39,8 @@ namespace IdentityServer.MultiTenant.Controller
 
         [HttpGet]
         public AppResponseDto Delete([FromQuery]string tenantDomain) {
-            bool result = _tenantRepo.DeleteTenantDomain(tenantDomain);
-            return new AppResponseDto(result);
+            bool result = _tenantRepo.DeleteTenantDomain(tenantDomain,out string errMsg);
+            return new AppResponseDto(result) { ErrorMsg=result?string.Empty:errMsg};
         }
 
         [HttpGet]

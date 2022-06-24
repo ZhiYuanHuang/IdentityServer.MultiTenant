@@ -133,6 +133,70 @@ namespace IdentityServer.MultiTenant.Controller
             _tenantRepo.ChangeTenantStatus(existedTenantInfo.Id, changingStatus);
             return new AppResponseDto() ;
         }
+
+        [HttpPost]
+        public async Task<AppResponseDto> MigrateTenant([FromBody] TenantInfoDto tenantInfoDto) {
+            if (string.IsNullOrEmpty(tenantInfoDto.TenantDomain) || string.IsNullOrEmpty(tenantInfoDto.Identifier)) {
+                return new AppResponseDto(false) { ErrorMsg = "tenant can not be empty" };
+            }
+
+            Int64? toMigrateDbServerId = tenantInfoDto.DbServerId;
+            if (!toMigrateDbServerId.HasValue) {
+                return new AppResponseDto(false) { ErrorMsg = "migrate db server can not empty" };
+            }
+
+            bool isExist = _tenantRepo.ExistTenant(tenantInfoDto.TenantDomain, tenantInfoDto.Identifier, out TenantInfoDto existedTenantInfo);
+
+            if (!isExist) {
+                return new AppResponseDto(false) { ErrorMsg = "tenant not existed" };
+            }
+
+            if (string.IsNullOrEmpty(existedTenantInfo.ConnectionString) && string.IsNullOrEmpty(existedTenantInfo.EncryptedIdsConnectionString)){
+                return new AppResponseDto(false) { ErrorMsg="tenant db conn is empty"};
+            }
+
+            if(!existedTenantInfo.DbServerId.HasValue) {
+                return new AppResponseDto(false) { ErrorMsg = "tenant db server is empty" };
+            }
+
+            string originDbConn = existedTenantInfo.ConnectionString;
+            if (string.IsNullOrEmpty(existedTenantInfo.ConnectionString) && !string.IsNullOrEmpty(existedTenantInfo.EncryptedIdsConnectionString)) {
+                originDbConn = _encryptService.Decrypt_Aes(existedTenantInfo.EncryptedIdsConnectionString);
+            }
+
+            bool originDbConnSuccess = await _dbOperaService.CheckConnect(originDbConn);
+            if (!originDbConnSuccess) {
+                return new AppResponseDto(false) { ErrorMsg = "tenant db can not connect" };
+            }
+
+            existedTenantInfo.ConnectionString = originDbConn;
+
+            var dbServerList= _dbServerRepository.GetDbServers(existedTenantInfo.DbServerId.Value);
+            if(!dbServerList.Any() || dbServerList[0].Id != existedTenantInfo.DbServerId.Value) {
+                return new AppResponseDto(false) { ErrorMsg = "tenant origin db can not match" };
+            }
+            var originDbServer = dbServerList[0];
+
+            dbServerList = _dbServerRepository.GetDbServers(toMigrateDbServerId.Value);
+            if (!dbServerList.Any() || dbServerList[0].Id != toMigrateDbServerId.Value) {
+                return new AppResponseDto(false) { ErrorMsg = "can not found to migrate db server" };
+            }
+            var toMigratingDbServer = dbServerList[0];
+
+            if (!_dbOperaService.MigrateTenantDb(ref existedTenantInfo,originDbServer,toMigratingDbServer,out string errMsg)) {
+                return new AppResponseDto(false) { ErrorMsg=errMsg};
+            }
+
+            _dbServerRepository.AddDbCountByDbserver(originDbServer.Id,false);
+            _dbServerRepository.AddDbCountByDbserver(toMigratingDbServer.Id);
+            if(!_tenantRepo.AddOrUpdateTenant(existedTenantInfo,out errMsg, false)) {
+                return new AppResponseDto(false) { ErrorMsg = errMsg };
+            }
+
+            return new AppResponseDto() {
+
+            };
+        }
     }
 
 

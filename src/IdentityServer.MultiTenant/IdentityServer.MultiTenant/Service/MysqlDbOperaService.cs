@@ -148,6 +148,109 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
+        public bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto,DbServerModel originDbServer,DbServerModel dbServer,out string errMsg) {
+
+            string originDbConn = tenantInfoDto.ConnectionString;
+            errMsg = string.Empty;
+            if (string.IsNullOrEmpty(originDbServer.Userpwd) && !string.IsNullOrEmpty(originDbServer.EncryptUserpwd)) {
+                originDbServer.Userpwd = _encryptService.Decrypt_Aes(originDbServer.EncryptUserpwd);
+            }
+            if (string.IsNullOrEmpty(dbServer.Userpwd) && !string.IsNullOrEmpty(dbServer.EncryptUserpwd)) {
+                dbServer.Userpwd = _encryptService.Decrypt_Aes(dbServer.EncryptUserpwd);
+            }
+            bool connSuccess= CheckConnect(dbServer).Result;
+            if (!connSuccess) {
+                errMsg = "to migrate db server can not connect";
+                return false;
+            }
+
+            //Database=sys.IdentityServer.db;Data Source=127.0.0.1;Port=3307;User Id=root;Password=123456;Charset=utf8
+            int tmpIndex = originDbConn.IndexOf("database=", StringComparison.OrdinalIgnoreCase);
+            int tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originDbName = originDbConn.Substring(tmpIndex + 9, tmpEndIndex - tmpIndex - 9);
+
+            tmpIndex = originDbConn.IndexOf("Data Source=",StringComparison.OrdinalIgnoreCase);
+            tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originHost = originDbConn.Substring(tmpIndex+12,tmpEndIndex-tmpIndex-12);
+
+            tmpIndex = originDbConn.IndexOf("Port=", StringComparison.OrdinalIgnoreCase);
+            tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originPort = originDbConn.Substring(tmpIndex+5,tmpEndIndex-tmpIndex-5);
+
+            tmpIndex = originDbConn.IndexOf("User Id=", StringComparison.OrdinalIgnoreCase);
+            tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originUserName = originDbConn.Substring(tmpIndex + 8, tmpEndIndex - tmpIndex - 8);
+
+            tmpIndex = originDbConn.IndexOf("Password=", StringComparison.OrdinalIgnoreCase);
+            tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originUserpwd = originDbConn.Substring(tmpIndex + 9, tmpEndIndex - tmpIndex - 9);
+
+
+            bool result = false;
+
+            _mutex.WaitOne();
+            try {
+                
+                string migratingDbName = $"{originDbName}.tmp";
+
+                List<string> creatTenantDbCmdList = new List<string>() {
+                    string.Format("mysql -h{0} -P{1} -u{2} -p{3}",dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd),
+                    string.Format("create database `{0}` default character set utf8mb4 collate utf8mb4_general_ci;",migratingDbName),
+                    "exit"
+                };
+
+                string executeResult = RunCmd(creatTenantDbCmdList);
+                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error", StringComparison.OrdinalIgnoreCase)) {
+                    _logger.LogError("create tmp migrating db");
+                    return false;
+                }
+
+                List<string> copyCmdList = new List<string>() {
+                    string.Format("mysqldump {0} -h{1} -P{2} -u{3} -p{4} --add-drop-table --column-statistics=0 | mysql {5} -h{6} -P{7} -u{8} -p{9}",
+                    originDbName,originHost,originPort,originUserName,originUserpwd,
+                    migratingDbName,dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd
+                    ),
+                };
+
+                executeResult = RunCmd(copyCmdList);
+                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error", StringComparison.OrdinalIgnoreCase)) {
+                    _logger.LogError("migrating tmp tenant db");
+                    return false;
+                }
+
+                copyCmdList = new List<string>() {
+                    string.Format("mysqldump {0} -u{1} -p{2} --add-drop-table --column-statistics=0 | mysql {3} -h{4} -P{5} -u{6} -p{7}",
+                    migratingDbName,originUserName,originUserpwd,
+                    originDbName,dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd
+                    ),
+                };
+
+                executeResult = RunCmd(copyCmdList);
+                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error", StringComparison.OrdinalIgnoreCase)) {
+                    _logger.LogError("copy tmp tenant db to real db");
+                    return false;
+                }
+
+                //Database ={ 0}; Data Source = { 1 }; Port ={ 2}; User Id = { 3 }; Password ={ 4}; Charset = utf8mb4;
+                string migratedDbConnStr = string.Format(_returnDbConnTempalte, originDbName, dbServer.ServerHost, dbServer.ServerPort, dbServer.UserName, dbServer.Userpwd);
+                tenantInfoDto.EncryptedIdsConnectionString = _encryptService.Encrypt_Aes(migratedDbConnStr);
+
+                Task.Run(() => {
+                    DeleteTenantDb(dbServer,migratingDbName);
+                    DeleteTenantDb(originDbServer,originDbName);
+                }).ConfigureAwait(false);
+
+                result = true;
+            } catch (Exception ex) {
+                result = false;
+                _logger.LogError(ex, $"migrate tenant db {dbServer?.ServerHost} {originDbName} error");
+            } finally {
+                _mutex.ReleaseMutex();
+            }
+
+            return result;
+        }
+
         public bool DeleteTenantDb(DbServerModel dbServer,string toDeleteDb) {
 
             bool result = false;

@@ -70,8 +70,8 @@ namespace IdentityServer.MultiTenant.Repository
             errMsg = string.Empty;
             bool result = false;
 
-            string updateSql = "Update TenantDomain Set EnableStatus=@enableStatus,Description=@description,UpdateTime=@dtNow Where Id=@id";
-            string insertSql = "Insert Into TenantDomain (TenantDomain,EnableStatus,Description,CreateTime) Values (@domain,1,@description,@dtNow)";
+            string updateSql = "Update TenantDomain Set EnableStatus=@enableStatus,Description=@description,UpdateTime=@dtNow,ParentDomainId=@parentDomainId Where Id=@id";
+            string insertSql = "Insert Into TenantDomain (TenantDomain,EnableStatus,Description,CreateTime,ParentDomainId) Values (@domain,1,@description,@dtNow,@parentDomainId)";
 
             try {
                 var existTenantDomain= _dbUtil.Slave.Query<TenantDomainModel>("Select * From TenantDomain Where TenantDomain=@domain",new Dictionary<string, object>() { { "domain", tenantDomainModel.TenantDomain} });
@@ -84,7 +84,8 @@ namespace IdentityServer.MultiTenant.Repository
                             { "enableStatus",tenantDomainModel.EnableStatus},
                             { "description",tenantDomainModel.Description},
                             { "id",existTenantDomain.Id},
-                            { "dtNow",DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}
+                            { "dtNow",DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")},
+                            { "parentDomainId",tenantDomainModel.ParentDomainId}
                         })>0;
                     }
                 } else {
@@ -95,7 +96,8 @@ namespace IdentityServer.MultiTenant.Repository
                         result= _dbUtil.Master.ExecuteNonQuery(insertSql,new Dictionary<string, object>() {
                             { "domain",tenantDomainModel.TenantDomain},
                             { "description",tenantDomainModel.Description},
-                            { "dtNow",DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}
+                            { "dtNow",DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")},
+                            { "parentDomainId",tenantDomainModel.ParentDomainId}
                         })>0;
                     }
                 }
@@ -111,7 +113,20 @@ namespace IdentityServer.MultiTenant.Repository
             
         }
 
-        public bool DeleteTenantDomain(string tenantDomain) {
+        public bool DeleteTenantDomain(string tenantDomain,out string errMsg) {
+            errMsg = string.Empty;
+            var existedDomainList= GetTenantDomains(tenantDomain);
+            if(!existedDomainList.Any() || string.Compare(existedDomainList[0].TenantDomain, tenantDomain, true) != 0) {
+                errMsg = "domain not existed";
+                return false;
+            }
+
+            var childrenDomains= GetChildrenTenantDomains(existedDomainList[0].Id);
+            if (childrenDomains.Any()) {
+                errMsg = "children domain existed!";
+                return false;
+            }
+
             string sql = "Delete From TenantDomain Where TenantDomain=@domain";
             bool result = false;
             try {
@@ -135,6 +150,14 @@ namespace IdentityServer.MultiTenant.Repository
             }
 
             return _dbUtil.Master.QueryList<TenantDomainModel>(sql,param);
+        }
+
+        public List<TenantDomainModel> GetChildrenTenantDomains(Int64 tenantDomainId) {
+            string sql = "Select * From TenantDomain Where ParentDomainId=@tenantDomainId";
+
+            Dictionary<string, object> param = new Dictionary<string, object>() { { "tenantDomainId",tenantDomainId } };
+            
+            return _dbUtil.Master.QueryList<TenantDomainModel>(sql, param);
         }
 
         public bool AddOrUpdateTenant(TenantInfoDto tenantInfoDto,out string errMsg,bool isAdd) {

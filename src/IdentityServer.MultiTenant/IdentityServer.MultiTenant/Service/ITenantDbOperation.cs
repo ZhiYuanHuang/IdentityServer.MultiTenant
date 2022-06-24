@@ -11,5 +11,7 @@ namespace IdentityServer.MultiTenant.Service
         Task<bool> CheckConnect(string connStr);
 
         bool DeleteTenantDb(DbServerModel dbServer, TenantInfoDto tenantInfo, out string errMsg);
+
+        bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto, DbServerModel originDbServer, DbServerModel dbServer, out string errMsg);
     }
 }

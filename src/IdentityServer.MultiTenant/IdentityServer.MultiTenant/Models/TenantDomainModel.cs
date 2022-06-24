@@ -14,6 +14,7 @@ namespace IdentityServer.MultiTenant.Models
         /// 1：启用，0：禁用
         /// </summary>
         public int EnableStatus { get; set; }
+        public Int64? ParentDomainId { get; set; }
         public string Description { get; set; }
         public DateTime? CreateTime { get; set; }
         public DateTime? UpdateTime { get; set; }

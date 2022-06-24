@@ -1,4 +1,5 @@
 ﻿using IdentityServer.MultiTenant.Dto;
+using IdentityServer.MultiTenant.Framework.Const;
 using IdentityServer.MultiTenant.Models;
 using IdentityServer.MultiTenant.Repository;
 using IdentityServer.MultiTenant.Service;
@@ -35,10 +36,17 @@ namespace IdentityServer.MultiTenant.Controller
                 return new AppResponseDto(false) { ErrorMsg="tenant identifier can not be empty"};
             }
 
-            string requestHost= Request.Host.Value;
-            int tmpStartIndx = requestHost.IndexOf('.');
-            int tmpEndIndex = requestHost.LastIndexOf(':');
-            string tenantDomain = requestHost.Substring(tmpStartIndx+1,tmpEndIndex-tmpStartIndx-1);
+            string tenantDomain = string.Empty;
+
+            var clientDomainClaim= Request.HttpContext.User.Claims.FirstOrDefault(x=>x.Type== MulTenantConstants.ClientDomainClaim);
+            if (clientDomainClaim != null) {
+                tenantDomain = clientDomainClaim.Value;
+            } else {
+                string requestHost = Request.Host.Value;
+                int tmpStartIndx = requestHost.IndexOf('.');
+                int tmpEndIndex = requestHost.LastIndexOf(':');
+                tenantDomain = requestHost.Substring(tmpStartIndx + 1, tmpEndIndex - tmpStartIndx - 1);
+            }
 
             bool isExist= _tenantRepo.ExistTenant(tenantDomain, tenantInfoDto.Identifier,out TenantInfoDto existedTenantInfo);
 

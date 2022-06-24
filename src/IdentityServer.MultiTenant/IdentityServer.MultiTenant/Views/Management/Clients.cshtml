@@ -4,7 +4,7 @@
 
 @model List<IdentityServer4.EntityFramework.Entities.Client>
 @{
-
+    var mainDomainList = (List<IdentityServer.MultiTenant.Models.TenantDomainModel>)ViewData["MainDomainList"];
 }
 
 <partial name="./Index" />
@@ -46,6 +46,19 @@
         <p>可以点击提交按钮查看效果。</p>*@
 <form id="client_form" class="needs-validation" novalidate>
     <div class="form-group">
+        <label for="maindomain">MainDomain:</label>
+        <select id="maindomain" name="maindomain" style="width: 150px;">
+            <option style='display: none'></option>
+            @foreach (var item in mainDomainList) {
+                <option value="@item.TenantDomain">@item.TenantDomain</option>
+            }
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="seconddomain">SecondDomain:</label>
+        <input type="text" class="form-control" id="seconddomain" placeholder="Enter seconddomain" name="seconddomain" required>
+    </div>
+    <div class="form-group">
         <label for="clientid">ClientId:</label>
         <input type="text" class="form-control" id="clientid" placeholder="Enter clientid" name="clientid" required>
         <div class="valid-feedback">验证成功！</div>
@@ -63,7 +76,7 @@
         <div class="valid-feedback">验证成功！</div>
         <div class="invalid-feedback">请输入ClientName！</div>
     </div>
-    
+
     <input type="button" class="btn btn-primary" value="提交" onclick="addOrUpdateClient()" />
 </form>
 </div>
@@ -75,13 +88,18 @@
     <script>
         function addOrUpdateClient() {
             var jsonObj = {
-                "ClientId": $('#clientid').val(),
-                "ClientName": $('#clientname').val(),
-                "ClientSecrets": [
-                    {
-                        "Value": $('#clientsecret').val(),
-                    }
-                ],
+                "ClientInfo": {
+                    "ClientId": $('#clientid').val(),
+                    "ClientName": $('#clientname').val(),
+                    "ClientSecrets": [
+                        {
+                            "Value": $('#clientsecret').val(),
+                        }
+                    ]
+                },
+                "MainDomain": $('#maindomain').val(),
+                "SecondDomain": $('#seconddomain').val()
+                
             };
 
             $.ajax({

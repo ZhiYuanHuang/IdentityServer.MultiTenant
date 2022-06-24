@@ -1,0 +1,45 @@
+﻿@model ErrorViewModel
+
+@{
+    var error = Model.Error;
+}
+
+<div class="alert alert-danger alert-dismissible">
+    <button type="button" class="close" data-dismiss="alert">&times;</button>
+    <strong>
+        Sorry, there was an error
+
+        @if (error != null) {
+            <strong>
+                <em>
+                    : @error
+                </em>
+            </strong>
+
+        }
+    </strong> 
+</div>
+
+@*<div class="error-page">
+    <div class="lead">
+        <h1>Error</h1>
+    </div>
+
+    <div class="row">
+        <div class="col-sm-6">
+            <div class="alert alert-danger">
+                Sorry, there was an error
+
+                @if (error != null) {
+                    <strong>
+                        <em>
+                            : @error
+                        </em>
+                    </strong>
+
+                }
+            </div>
+
+        </div>
+    </div>
+</div>*@

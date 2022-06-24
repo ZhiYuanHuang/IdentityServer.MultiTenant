@@ -183,5 +183,10 @@ namespace IdentityServer.MultiTenant.Service
 
             return result;
         }
+
+        public bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto, DbServerModel originDbServer, DbServerModel dbServer, out string errMsg) {
+            errMsg = "sqlite db not support migrate";
+            return false;
+        }
     }
 }

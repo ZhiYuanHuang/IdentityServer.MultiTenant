@@ -15,5 +15,7 @@ namespace IdentityServer.MultiTenant.Framework.Const
         public const string SysAdminUserPwd = "Pass123$";
 
         public const string SysAdminRole = "sysadmin";
+
+        public const string ClientDomainClaim = "ClientDomain";
     }
 }
