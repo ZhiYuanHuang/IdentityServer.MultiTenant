@@ -111,8 +111,8 @@ namespace IdentityServer.MultiTenant.Service
                     "exit"
                 };
 
-                string executeResult= RunCmd(creatTenantDbCmdList);
-                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error",StringComparison.OrdinalIgnoreCase)) {
+                bool runNormal= RunCmd(creatTenantDbCmdList);
+                if (!runNormal) {
                     _logger.LogError("create tenant db");
                     return false;
                 }
@@ -124,8 +124,8 @@ namespace IdentityServer.MultiTenant.Service
                     ),
                 };
 
-                executeResult = RunCmd( copyCmdList);
-                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error", StringComparison.OrdinalIgnoreCase)) {
+                runNormal = RunCmd( copyCmdList);
+                if (!runNormal) {
                     _logger.LogError("copy tenant db");
                     return false;
                 }
@@ -199,8 +199,8 @@ namespace IdentityServer.MultiTenant.Service
                     "exit"
                 };
 
-                string executeResult = RunCmd(creatTenantDbCmdList);
-                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error", StringComparison.OrdinalIgnoreCase)) {
+                bool runNormal = RunCmd(creatTenantDbCmdList);
+                if (!runNormal) {
                     _logger.LogError("create tmp migrating db");
                     return false;
                 }
@@ -212,8 +212,8 @@ namespace IdentityServer.MultiTenant.Service
                     ),
                 };
 
-                executeResult = RunCmd(copyCmdList);
-                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error", StringComparison.OrdinalIgnoreCase)) {
+                runNormal = RunCmd(copyCmdList);
+                if (!runNormal) {
                     _logger.LogError("migrating tmp tenant db");
                     return false;
                 }
@@ -225,8 +225,8 @@ namespace IdentityServer.MultiTenant.Service
                     ),
                 };
 
-                executeResult = RunCmd(copyCmdList);
-                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error", StringComparison.OrdinalIgnoreCase)) {
+                runNormal = RunCmd(copyCmdList);
+                if (!runNormal) {
                     _logger.LogError("copy tmp tenant db to real db");
                     return false;
                 }
@@ -264,9 +264,9 @@ namespace IdentityServer.MultiTenant.Service
                     string.Format("exit")
                 };
 
-                string executeResult = RunCmd(deleteTenantDbCmdList);
-                if (!string.IsNullOrEmpty(executeResult) && executeResult.Contains("error", StringComparison.OrdinalIgnoreCase)) {
-                    _logger.LogError($"delete tenant db,error:{executeResult}");
+                bool runNormal = RunCmd(deleteTenantDbCmdList);
+                if (!runNormal) {
+                    _logger.LogError($"delete tenant db error");
                     return false;
                 }
 
@@ -371,8 +371,7 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
-        private string RunCmd(List<string> innerCmdStrList) {
-            StringBuilder errBuilder = new StringBuilder();
+        private bool RunCmd(List<string> innerCmdStrList) {
 
             System.Diagnostics.Process p = new System.Diagnostics.Process();
             p.StartInfo.WorkingDirectory = _mysqlBinDirPath;
@@ -382,33 +381,128 @@ namespace IdentityServer.MultiTenant.Service
             p.StartInfo.RedirectStandardOutput = true;
             p.StartInfo.RedirectStandardError = true;
             p.StartInfo.CreateNoWindow = true;
+
+            StringBuilder errBuilder = new StringBuilder();
+            int errorSignal = 0;
             p.ErrorDataReceived += (obj, args) => {
                 if (!string.IsNullOrEmpty(args.Data)) {
+                    while(Interlocked.CompareExchange(ref errorSignal, 1, 0) != 0) {
+                        SpinWait.SpinUntil(()=>errorSignal==0,100);
+                    }
+
                     errBuilder.Append(args.Data);
+
+                    Volatile.Write(ref errorSignal,0);
+                }
+            };
+
+            StringBuilder outputBuilder = new StringBuilder();
+            int outputSignal = 0;
+            p.OutputDataReceived += (obj, args) => {
+                if (!string.IsNullOrEmpty(args.Data)) {
+                    while (Interlocked.CompareExchange(ref outputSignal, 1, 0) != 0) {
+                        SpinWait.SpinUntil(() => outputSignal == 0, 100);
+                    }
+
+                    errBuilder.Append(args.Data);
+
+                    Volatile.Write(ref outputSignal, 0);
                 }
             };
 
             p.Start();
             p.BeginErrorReadLine();
 
+            bool runNormal = true;
             if (innerCmdStrList != null && innerCmdStrList.Any()) {
 
                 foreach (var cmd in innerCmdStrList) {
+                    errBuilder.Clear();
+                    outputBuilder.Clear();
                     p.StandardInput.WriteLine(cmd);
 
                     if (string.Compare(cmd, "exit",true) == 0) {
                         Thread.Sleep(30);
                     }else {
                         Thread.Sleep(100);
+                        if(!checkCmdRunEnd(ref errBuilder,ref errorSignal,ref outputBuilder,ref outputSignal,out string errMsg)) {
+                            runNormal = false;
+                            _logger.LogError($"run cmd error,msg:{errMsg}");
+                            break;
+                        }
                     }
                 }
             }
 
             p.StandardInput.WriteLine("exit");
 
-            p.WaitForExit();
+            p.WaitForExit(1000*1);
       
-            return errBuilder.ToString();
+            return runNormal;
+        }
+
+        private bool checkCmdRunEnd(ref StringBuilder errorBuilder,ref int errorSignal,ref StringBuilder outputBuilder,ref int outputSignal,out string errMsg) {
+            int tmpOutputStrLength = 0;
+            bool runNormal = true;
+            int equalCount = 0;
+            int maxEqualCount = 3;
+            while (true) {
+                bool getSignal = false;
+                try {
+                    if (Interlocked.CompareExchange(ref outputSignal, 1, 0) == 0) {
+                        getSignal = true;
+                        if (outputBuilder.Length < tmpOutputStrLength) {
+                            runNormal = false;
+                            break;
+                        }
+                        else if (outputBuilder.Length == tmpOutputStrLength) {
+                            equalCount++;
+                            if (equalCount >= maxEqualCount) {
+                                break;
+                            }
+                        }
+                        else if (outputBuilder.Length > tmpOutputStrLength) {
+                            equalCount = 0;
+                            tmpOutputStrLength = outputBuilder.Length;
+                        }
+                    }
+                }
+                catch {
+                    runNormal = false;
+                    break;
+                } finally {
+                    if (getSignal) {
+                        Volatile.Write(ref outputSignal,0);
+                    }
+                }
+
+                Thread.Sleep(100*3);
+            }
+
+            errMsg = string.Empty;
+            try {
+                while (Interlocked.CompareExchange(ref errorSignal, 1, 0) != 0) {
+                    Thread.Sleep(1);
+                }
+                errMsg = errorBuilder.ToString();
+                errorBuilder.Clear();
+                while (Interlocked.CompareExchange(ref outputSignal, 1, 0) != 0) {
+                    Thread.Sleep(1);
+                }
+                outputBuilder.Clear();
+            } catch {
+            } finally {
+                Volatile.Write(ref errorSignal,0);
+                Volatile.Write(ref outputSignal,0);
+            }
+
+            if (errMsg.Contains("error", StringComparison.OrdinalIgnoreCase)) {
+                runNormal = false;
+            } else {
+                errMsg = string.Empty;
+            }
+
+            return runNormal;
         }
     }
 }
