@@ -100,9 +100,12 @@ namespace IdentityServer.MultiTenant.Quickstart
                 selectedTenantDomain = tenantDomain;
             }
             var tenantList = _tenantRepo.GetTenantInfoDtos(tenantDomain);
+            var dbServerList = _dbServerRepo.GetDbServers();
+            Dictionary<Int64, string> dbServerDict = new Dictionary<long, string>();
             if (tenantList.Any()) {
                 List<Task> taskList = new List<Task>();
                 foreach (var tenant in tenantList) {
+                    
                     var task = Task.Factory.StartNew((tenantInfoObj)=> {
                         TenantInfoDto tmpTenant = tenantInfoObj as TenantInfoDto;
                         string connStr = tmpTenant.ConnectionString;
@@ -112,13 +115,27 @@ namespace IdentityServer.MultiTenant.Quickstart
 
                         tmpTenant.UseMysql = _useMysql && DbConnStrExtension.IsUseMysql(connStr);
 
+                        if (tmpTenant.UseMysql) {
+                            if (tmpTenant.DbServerId.HasValue) {
+                                if (!dbServerDict.ContainsKey(tmpTenant.DbServerId.Value)) {
+                                    var theDbServer = dbServerList.FirstOrDefault(x => x.Id == tmpTenant.DbServerId.Value);
+                                    if (theDbServer != null) {
+                                        dbServerDict[tmpTenant.DbServerId.Value] = $"{theDbServer.ServerHost}:{theDbServer.ServerPort}";
+                                    }
+                                }
+                            }
+                        }
+
                         tmpTenant.ConnectSuccess = _tenantDbOperation.CheckConnect(connStr).Result;
                     },tenant);
                     taskList.Add(task);
                 }
 
                 await Task.WhenAll(taskList.ToArray());
+
             }
+
+            ViewData["DbServerDict"] = dbServerDict;
 
             var mainDomainList= tenantDomainList.Where(x => x.ParentDomainId == null).Select(x => x).ToList();
             List<TenantDomainModel> orderDomainList = new List<TenantDomainModel>();

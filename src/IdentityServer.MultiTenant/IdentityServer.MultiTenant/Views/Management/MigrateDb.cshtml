@@ -78,6 +78,7 @@
                 async: false,
                 success: function (data) {
                     if (data.errorCode == 0) {
+                        window.location.reload();
                         alert("迁移成功")；
                     }
                     else {

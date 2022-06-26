@@ -3,6 +3,7 @@
 *@
 @model TenantManageViewModel
 @{
+    var dbServerDict = (Dictionary<Int64, string>)ViewData["DbServerDict"];
 }
 
 <partial name="./Index" />
@@ -32,7 +33,7 @@
                     <th>TenantDomain</th>
                     <th>Name</th>
                     <th>GuidId</th>
-                    <th>Description</th>
+                    <th>Db Server</th>
                     <th>Status</th>
                     <th>Action</th>
                 </tr>
@@ -45,7 +46,10 @@
                         <td>@tenantInfo.TenantDomain</td>
                         <td>@tenantInfo.Name</td>
                         <td>@tenantInfo.GuidId</td>
-                        <td>@tenantInfo.Description</td>
+                        <td>@if (tenantInfo.DbServerId != null && dbServerDict.ContainsKey(tenantInfo.DbServerId.Value)) {
+                                <span>@dbServerDict[tenantInfo.DbServerId.Value]</span>
+                            }
+                        </td>
                         <td>
                             <span>@(tenantInfo.ConnectSuccess?"连接成功":"连接失败")</span>
                         </td>
