@@ -105,7 +105,7 @@ namespace IdentityServer.MultiTenant.Quickstart
             if (tenantList.Any()) {
                 List<Task> taskList = new List<Task>();
                 foreach (var tenant in tenantList) {
-                    
+
                     var task = Task.Factory.StartNew((tenantInfoObj)=> {
                         TenantInfoDto tmpTenant = tenantInfoObj as TenantInfoDto;
                         string connStr = tmpTenant.ConnectionString;
@@ -115,17 +115,6 @@ namespace IdentityServer.MultiTenant.Quickstart
 
                         tmpTenant.UseMysql = _useMysql && DbConnStrExtension.IsUseMysql(connStr);
 
-                        if (tmpTenant.UseMysql) {
-                            if (tmpTenant.DbServerId.HasValue) {
-                                if (!dbServerDict.ContainsKey(tmpTenant.DbServerId.Value)) {
-                                    var theDbServer = dbServerList.FirstOrDefault(x => x.Id == tmpTenant.DbServerId.Value);
-                                    if (theDbServer != null) {
-                                        dbServerDict[tmpTenant.DbServerId.Value] = $"{theDbServer.ServerHost}:{theDbServer.ServerPort}";
-                                    }
-                                }
-                            }
-                        }
-
                         tmpTenant.ConnectSuccess = _tenantDbOperation.CheckConnect(connStr).Result;
                     },tenant);
                     taskList.Add(task);
@@ -133,6 +122,18 @@ namespace IdentityServer.MultiTenant.Quickstart
 
                 await Task.WhenAll(taskList.ToArray());
 
+                foreach(var tenant in tenantList) {
+                    if (tenant.UseMysql) {
+                        if (tenant.DbServerId.HasValue) {
+                            if (!dbServerDict.ContainsKey(tenant.DbServerId.Value)) {
+                                var theDbServer = dbServerList.FirstOrDefault(x => x.Id == tenant.DbServerId.Value);
+                                if (theDbServer != null) {
+                                    dbServerDict[tenant.DbServerId.Value] = $"{theDbServer.ServerHost}:{theDbServer.ServerPort}";
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             ViewData["DbServerDict"] = dbServerDict;

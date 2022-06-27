@@ -20,6 +20,8 @@ namespace IdentityServer.MultiTenant.Service
         private readonly string _sampleDb_dbFilePath;
         private readonly string _tenantDb_dbFileDir;
 
+        private string _backupDbDirPath;
+
         public SqliteDbOperaService(IConfiguration config,  ILogger<SqliteDbOperaService> logger, EncryptService encryptService,IWebHostEnvironment hostingEnvironment) { 
             _logger = logger;
             string dbDirPath= config["SampleDb:DbDirPath"];
@@ -37,6 +39,14 @@ namespace IdentityServer.MultiTenant.Service
             }
 
             _logger.LogInformation($"_tenantDb_dbFileDir:{_tenantDb_dbFileDir}");
+
+            _backupDbDirPath = config["BackupDbDirPath"];
+            if (string.IsNullOrEmpty(_backupDbDirPath)) {
+                _backupDbDirPath = System.IO.Path.Combine(hostingEnvironment.ContentRootPath, "DbBackup");
+            }
+            if (!System.IO.Directory.Exists(_backupDbDirPath)) {
+                System.IO.Directory.CreateDirectory(_backupDbDirPath);
+            }
         }
 
         public bool CreateTenantDb(ref TenantInfoDto tenantInfoDto, out DbServerModel dbServer, out string creatingDbName) {
@@ -116,12 +126,21 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
-        public bool DeleteTenantDb(DbServerModel dbServer, string toDeleteDb) {
+        public bool DeleteTenantDb(DbServerModel dbServer, string toDeleteDb, bool backup = false) {
             bool result = false;
             string dbFilePath = System.IO.Path.Combine(_tenantDb_dbFileDir, toDeleteDb);
 
             if (System.IO.File.Exists(dbFilePath)) {
                 try {
+                    if (backup) {
+                        string backSqlFilePath = System.IO.Path.Combine(_backupDbDirPath, $"Sqlite_{DateTime.Now.ToString("yyyyMMddHHmmss")}_{toDeleteDb}");
+                        System.IO.File.Copy(dbFilePath,backSqlFilePath);
+                        if (!System.IO.File.Exists(backSqlFilePath)) {
+                            _logger.LogError($"cann't not found backuped sql {backSqlFilePath}");
+                            return false;
+                        }
+                    }
+
                     System.IO.File.Delete(dbFilePath);
                     result = true;
                 } catch(Exception ex) {
@@ -187,6 +206,30 @@ namespace IdentityServer.MultiTenant.Service
         public bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto, DbServerModel originDbServer, DbServerModel dbServer, out string errMsg) {
             errMsg = "sqlite db not support migrate";
             return false;
+        }
+
+        public async Task<Tuple<bool, string>> CheckConnectAndVersion(string connStr) {
+            if (string.IsNullOrEmpty(connStr)) {
+                return new Tuple<bool, string>(false,string.Empty);
+            }
+            //"Data Source=127.0.0.1;Port=13306;User Id=devuser;Password=devpwd;Charset=utf8;",
+            SQLiteConnection connection = new SQLiteConnection(connStr);
+
+            string version = string.Empty;
+            bool result = false;
+            try {
+                await connection.OpenAsync();
+                version = connection.ServerVersion;
+                result = true;
+            } catch (Exception ex) {
+                result = false;
+            } finally {
+                connection?.Close();
+                connection?.Dispose();
+                connection = null;
+            }
+
+            return new Tuple<bool, string>(result,version);
         }
     }
 }

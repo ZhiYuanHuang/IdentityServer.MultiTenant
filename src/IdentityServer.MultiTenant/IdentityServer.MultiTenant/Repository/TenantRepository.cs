@@ -20,9 +20,11 @@ namespace IdentityServer.MultiTenant.Repository
 
         public List<TenantInfoDto> GetTenantInfoDtos(string tenantDomain) {
             Dictionary<string, object> param = new Dictionary<string, object>();
-            string sql = @"Select a.*,b.TenantDomain,b.EnableStatus As DomainEnableStatus From TenantInfo a 
+            string sql = @"Select a.*,b.TenantDomain,b.EnableStatus As DomainEnableStatus,c.DbServerId From TenantInfo a 
                             Inner Join TenantDomain b
-                                On b.Id=a.TenantDomainId";
+                                On b.Id=a.TenantDomainId
+                            Left Join TenantDbServerRef c
+                                On c.TenantId=a.Id";
             if (!string.IsNullOrEmpty(tenantDomain)) {
                 sql += " Where b.TenantDomain=@domain ";
                 param["domain"] = tenantDomain;

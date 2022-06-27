@@ -129,6 +129,38 @@
             xhr.send(null);
         }
 
+        function executeMigrate() {
+            var jsonObj = {
+                "Identifier": $('#identifier').val(),
+                "TenantDomain": $('#tenantdomain').val(),
+                "DbServerId": parseInt($('#tomigrateserver').val()),
+
+            };
+
+            $.ajax({
+                url: "/sys/api/SysTenant/MigrateTenant",
+                type: "post",
+                data: JSON.stringify(jsonObj),
+                contentType: "application/json",
+                dataType: "json",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        window.location.reload();
+                        alert("迁移成功");
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
         function createTenant() {
             var jsonObj = {
                 "Identifier": $('#identifier').val(),

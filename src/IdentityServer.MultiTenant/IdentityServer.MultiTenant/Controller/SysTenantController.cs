@@ -1,5 +1,6 @@
 ﻿using IdentityServer.MultiTenant.Dto;
 using IdentityServer.MultiTenant.Framework.Enum;
+using IdentityServer.MultiTenant.Framework.Utils;
 using IdentityServer.MultiTenant.Models;
 using IdentityServer.MultiTenant.Repository;
 using IdentityServer.MultiTenant.Service;
@@ -60,6 +61,7 @@ namespace IdentityServer.MultiTenant.Controller
             //创建数据库
             bool createDbResult = _dbOperaService.CreateTenantDb(ref tenantInfoDto, out DbServerModel dbServer, out string creatingDbName);
             if (createDbResult) {
+                _dbServerRepository.AddDbCountByDbserver(dbServer);
                 if (_tenantRepo.AttachDbServerToTenant(tenantInfoDto, dbServer, out errMsg)) {
                     realResult = true;
                 }
@@ -72,6 +74,7 @@ namespace IdentityServer.MultiTenant.Controller
                     //开启线程删数据库
                     Task.Run(() => {
                         _dbOperaService.DeleteTenantDb(dbServer, creatingDbName);
+                        _dbServerRepository.AddDbCountByDbserver(dbServer, false);
                     }).ConfigureAwait(false);
                 }
 
@@ -106,6 +109,8 @@ namespace IdentityServer.MultiTenant.Controller
             if(!_dbOperaService.DeleteTenantDb(dbServer,existedTenantInfo,out string errMsg)) {
                 return new AppResponseDto(false) { ErrorMsg=errMsg};
             }
+
+            _dbServerRepository.AddDbCountByDbserver(dbServer, false);
 
             _tenantRepo.RemoveTenant(existedTenantInfo.Id);
             return new AppResponseDto();
@@ -164,10 +169,11 @@ namespace IdentityServer.MultiTenant.Controller
                 originDbConn = _encryptService.Decrypt_Aes(existedTenantInfo.EncryptedIdsConnectionString);
             }
 
-            bool originDbConnSuccess = await _dbOperaService.CheckConnect(originDbConn);
-            if (!originDbConnSuccess) {
+            Tuple<bool,string> originDbConnResult = await _dbOperaService.CheckConnectAndVersion(originDbConn);
+            if (!originDbConnResult.Item1) {
                 return new AppResponseDto(false) { ErrorMsg = "tenant db can not connect" };
             }
+            string originVersion = DbConnStrExtension.GetMysqlGeneralVersion(originDbConnResult.Item2);
 
             existedTenantInfo.ConnectionString = originDbConn;
 
@@ -183,13 +189,26 @@ namespace IdentityServer.MultiTenant.Controller
             }
             var toMigratingDbServer = dbServerList[0];
 
+            if (string.IsNullOrEmpty(toMigratingDbServer.Userpwd) && !string.IsNullOrEmpty(toMigratingDbServer.EncryptUserpwd)) {
+                toMigratingDbServer.Userpwd = _encryptService.Decrypt_Aes(toMigratingDbServer.EncryptUserpwd);
+            }
+            var migrateDbConnResult =await MysqlDbOperaService.CheckConnectAndVersion(toMigratingDbServer);
+            if (!migrateDbConnResult.Item1) {
+                return new AppResponseDto(false) { ErrorMsg = "to migrate db can not connect" };
+            }
+            string toMigrateVersion = DbConnStrExtension.GetMysqlGeneralVersion(migrateDbConnResult.Item2);
+            if (string.Compare(originVersion, toMigrateVersion, true) != 0) {
+                return new AppResponseDto(false) { ErrorMsg = "cann't migrate between not same version mysql" };
+            }
+
             if (!_dbOperaService.MigrateTenantDb(ref existedTenantInfo,originDbServer,toMigratingDbServer,out string errMsg)) {
                 return new AppResponseDto(false) { ErrorMsg=errMsg};
             }
 
-            _dbServerRepository.AddDbCountByDbserver(originDbServer.Id,false);
-            _dbServerRepository.AddDbCountByDbserver(toMigratingDbServer.Id);
-            if(!_tenantRepo.AddOrUpdateTenant(existedTenantInfo,out errMsg, false)) {
+            _dbServerRepository.AddDbCountByDbserver(originDbServer,false);
+            _dbServerRepository.AddDbCountByDbserver(toMigratingDbServer);
+
+            if(!_tenantRepo.AttachDbServerToTenant(existedTenantInfo,toMigratingDbServer,out errMsg)) {
                 return new AppResponseDto(false) { ErrorMsg = errMsg };
             }
 

@@ -25,5 +25,11 @@ namespace IdentityServer.MultiTenant.Framework.Utils
         public static bool IsUseMysql(string connStr) {
             return connStr.Contains("Port=");
         }
+
+        public static string GetMysqlGeneralVersion(string versionStr) {
+            int tmpFirstIndex = versionStr.IndexOf('.');
+            int tmpSecondIndex = versionStr.IndexOf('.', tmpFirstIndex+1);
+            return versionStr.Substring(0, tmpSecondIndex );
+        }
     }
 }

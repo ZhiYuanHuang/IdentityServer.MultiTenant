@@ -22,11 +22,14 @@ namespace IdentityServer.MultiTenant.Controller
         private readonly ILogger<TenantController> _logger;
         private readonly ITenantDbOperation _dbOperaService;
         private readonly EncryptService _encryptService;
-        public TenantController(EncryptService  encryptService, ITenantDbOperation dbOperaService, TenantRepository tenantRepo,ILogger<TenantController> logger) {
+        private readonly DbServerRepository _dbServerRepository;
+        public TenantController(EncryptService  encryptService, ITenantDbOperation dbOperaService, TenantRepository tenantRepo,ILogger<TenantController> logger,
+            DbServerRepository dbServerRepository) {
             _dbOperaService = dbOperaService;
             _tenantRepo = tenantRepo;
             _logger = logger;
             _encryptService = encryptService;
+            _dbServerRepository = dbServerRepository;
         }
 
         [HttpPost]
@@ -67,6 +70,7 @@ namespace IdentityServer.MultiTenant.Controller
             //创建数据库
             bool createDbResult = _dbOperaService.CreateTenantDb(ref tenantInfoDto, out DbServerModel dbServer, out string creatingDbName);
             if (createDbResult) {
+                _dbServerRepository.AddDbCountByDbserver(dbServer);
                 if (_tenantRepo.AttachDbServerToTenant(tenantInfoDto, dbServer,out errMsg)) {
                     realResult = true;
                 }
@@ -79,6 +83,7 @@ namespace IdentityServer.MultiTenant.Controller
                     //开启线程删数据库
                     Task.Run(() => {
                         _dbOperaService.DeleteTenantDb(dbServer, creatingDbName);
+                        _dbServerRepository.AddDbCountByDbserver(dbServer, false);
                     }).ConfigureAwait(false);
                 }
 

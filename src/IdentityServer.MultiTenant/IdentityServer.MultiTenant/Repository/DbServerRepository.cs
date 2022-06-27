@@ -29,7 +29,12 @@ namespace IdentityServer.MultiTenant.Repository
             return _dbUtil.Master.QueryList<DbServerModel>(sql,param);
         }
 
-        public void AddDbCountByDbserver(Int64 dbServerId,bool isPlus=true) {
+        public void AddDbCountByDbserver(DbServerModel dbServer,bool isPlus=true) {
+            if (dbServer == null) {
+                return;
+            }
+            Int64 dbServerId = dbServer.Id;
+
             _dbUtil.Master.ExecuteNonQuery($"Update DbServer Set CreatedDbCount=CreatedDbCount{(isPlus?"+":"-")}1 Where Id=@id",new Dictionary<string, object>() { { "id",dbServerId} });
         }
 

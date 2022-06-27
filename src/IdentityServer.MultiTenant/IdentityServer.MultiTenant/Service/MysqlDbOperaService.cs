@@ -21,6 +21,7 @@ namespace IdentityServer.MultiTenant.Service
     {
         DbServerRepository _dbServerRepository;
         ILogger<MysqlDbOperaService> _logger;
+        ILoggerFactory _loggerFactory;
 
         private readonly string _sampleDb_serverHost;
         private readonly int _sampleDb_serverPort;
@@ -31,19 +32,57 @@ namespace IdentityServer.MultiTenant.Service
         private Mutex _mutex=new Mutex();
 
         private string _mysqlBinDirPath;
+        private string _backupDbDirPath;
 
         private const string _returnDbConnTempalte = "Database={0};Data Source={1};Port={2};User Id={3};Password={4};Charset=utf8mb4;";
 
         private readonly EncryptService _encryptService;
 
-        public MysqlDbOperaService(IConfiguration config,  DbServerRepository dbServerRepository,ILogger<MysqlDbOperaService> logger,EncryptService encryptService, IWebHostEnvironment hostingEnvironment) {
+        private const string _backDbCmdTemplate = "mysqldump -h{0} -P{1} -u{2} -p{3} --column-statistics=0 --databases {4} > {5}";
+
+        public MysqlDbOperaService(IConfiguration config,  DbServerRepository dbServerRepository, ILoggerFactory loggerFactory,EncryptService encryptService, IWebHostEnvironment hostingEnvironment) {
             _encryptService = encryptService;
             _dbServerRepository = dbServerRepository;
-            _logger = logger;
+            _loggerFactory = loggerFactory;
+            _logger = loggerFactory?.CreateLogger<MysqlDbOperaService>();
 
             _mysqlBinDirPath = config["MysqlBinDirPath"];
             if (string.IsNullOrEmpty(_mysqlBinDirPath)) {
-                _mysqlBinDirPath = System.IO.Path.Combine(hostingEnvironment.ContentRootPath, "MysqlExe");
+                throw new System.ArgumentException("config item MysqlBinDirPath cann't be empty when use mysql");
+            }
+            if (!System.IO.Directory.Exists(_mysqlBinDirPath)) {
+                throw new System.ArgumentException($"cann't found dir {_mysqlBinDirPath}");
+            }
+            string[] mysqlExeFileList= System.IO.Directory.GetFiles(_mysqlBinDirPath,"mysql*");
+            if (!mysqlExeFileList.Any()) {
+                throw new System.ArgumentException($"cann't found dir {_mysqlBinDirPath} exe files");
+            }
+            bool foundMysqlExe = false;
+            bool foundMysqlDumpExe = false;
+            foreach(var mysqlBinFile in mysqlExeFileList) {
+                string fileNameWithoutExtension = System.IO.Path.GetFileNameWithoutExtension(mysqlBinFile);
+                if(string.Compare(fileNameWithoutExtension, "mysql",true)==0) {
+                    foundMysqlExe = true;
+                }
+                if (string.Compare(fileNameWithoutExtension, "mysqldump", true) == 0) {
+                    foundMysqlDumpExe = true;
+                }
+
+                if(foundMysqlExe && foundMysqlDumpExe) {
+                    break;
+                }
+            }
+
+            if(!foundMysqlExe || !foundMysqlDumpExe) {
+                throw new System.ArgumentException($"{_mysqlBinDirPath} missing bin file mysql or mysqldump");
+            }
+
+            _backupDbDirPath = config["BackupDbDirPath"];
+            if (string.IsNullOrEmpty(_backupDbDirPath)) {
+                _backupDbDirPath = System.IO.Path.Combine(hostingEnvironment.ContentRootPath,"DbBackup");
+            }
+            if(!System.IO.Directory.Exists(_backupDbDirPath)) {
+                System.IO.Directory.CreateDirectory(_backupDbDirPath);
             }
 
             _sampleDb_serverHost = config["SampleDb:Host"];
@@ -134,8 +173,6 @@ namespace IdentityServer.MultiTenant.Service
                 string createdDbConnStr = string.Format(_returnDbConnTempalte,creatingDbName,dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd);
                 tenantInfoDto.EncryptedIdsConnectionString = _encryptService.Encrypt_Aes(createdDbConnStr);
 
-                Task.Run(()=> { _dbServerRepository.AddDbCountByDbserver(selectedDbServer.Id); }).ConfigureAwait(false);
-
                 result = true;
             } catch(Exception ex) {
                 result = false;
@@ -193,6 +230,8 @@ namespace IdentityServer.MultiTenant.Service
                 
                 string migratingDbName = $"{originDbName}.tmp";
 
+                #region create migrate server tmp db
+
                 List<string> creatTenantDbCmdList = new List<string>() {
                     string.Format("mysql -h{0} -P{1} -u{2} -p{3}",dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd),
                     string.Format("create database `{0}` default character set utf8mb4 collate utf8mb4_general_ci;",migratingDbName),
@@ -205,6 +244,10 @@ namespace IdentityServer.MultiTenant.Service
                     return false;
                 }
 
+                #endregion
+
+                #region copy origin server db to migrate server tmp db
+
                 List<string> copyCmdList = new List<string>() {
                     string.Format("mysqldump {0} -h{1} -P{2} -u{3} -p{4} --add-drop-table --column-statistics=0 | mysql {5} -h{6} -P{7} -u{8} -p{9}",
                     originDbName,originHost,originPort,originUserName,originUserpwd,
@@ -214,31 +257,69 @@ namespace IdentityServer.MultiTenant.Service
 
                 runNormal = RunCmd(copyCmdList);
                 if (!runNormal) {
+                    Task.Run(() => {
+                        DeleteTenantDb(dbServer, migratingDbName);
+                    }).ConfigureAwait(false);
                     _logger.LogError("migrating tmp tenant db");
                     return false;
                 }
 
+                #endregion
+
+                #region create migrate server real db
+
+                creatTenantDbCmdList = new List<string>() {
+                    string.Format("mysql -h{0} -P{1} -u{2} -p{3}",dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd),
+                    string.Format("create database `{0}` default character set utf8mb4 collate utf8mb4_general_ci;",originDbName),
+                    "exit"
+                };
+
+                runNormal = RunCmd(creatTenantDbCmdList);
+                if (!runNormal) {
+                    Task.Run(() => {
+                        DeleteTenantDb(dbServer, migratingDbName);
+                    }).ConfigureAwait(false);
+                    _logger.LogError("create real migrating db");
+                    return false;
+                }
+
+                #endregion
+
+                #region copy tmp db to real db
+
                 copyCmdList = new List<string>() {
-                    string.Format("mysqldump {0} -u{1} -p{2} --add-drop-table --column-statistics=0 | mysql {3} -h{4} -P{5} -u{6} -p{7}",
-                    migratingDbName,originUserName,originUserpwd,
-                    originDbName,dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd
+                    string.Format("mysqldump {0} -h{4} -P{5} -u{1} -p{2} --add-drop-table --column-statistics=0 | mysql {3} -h{4} -P{5} -u{1} -p{2}",
+                    migratingDbName,dbServer.UserName,dbServer.Userpwd,
+                    originDbName,dbServer.ServerHost,dbServer.ServerPort
                     ),
                 };
 
                 runNormal = RunCmd(copyCmdList);
                 if (!runNormal) {
+                    Task.Run(() => {
+                        DeleteTenantDb(dbServer, migratingDbName);
+                        DeleteTenantDb(dbServer, originDbName);
+                    }).ConfigureAwait(false);
                     _logger.LogError("copy tmp tenant db to real db");
+                    
                     return false;
                 }
+
+                #endregion
 
                 //Database ={ 0}; Data Source = { 1 }; Port ={ 2}; User Id = { 3 }; Password ={ 4}; Charset = utf8mb4;
                 string migratedDbConnStr = string.Format(_returnDbConnTempalte, originDbName, dbServer.ServerHost, dbServer.ServerPort, dbServer.UserName, dbServer.Userpwd);
                 tenantInfoDto.EncryptedIdsConnectionString = _encryptService.Encrypt_Aes(migratedDbConnStr);
+                tenantInfoDto.ConnectionString = null;
+
+                #region delete tmp and origin db
 
                 Task.Run(() => {
                     DeleteTenantDb(dbServer,migratingDbName);
-                    DeleteTenantDb(originDbServer,originDbName);
+                    DeleteTenantDb(originDbServer,originDbName,true);
                 }).ConfigureAwait(false);
+
+                #endregion
 
                 result = true;
             } catch (Exception ex) {
@@ -251,27 +332,47 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
-        public bool DeleteTenantDb(DbServerModel dbServer,string toDeleteDb) {
+        public bool DeleteTenantDb(DbServerModel dbServer,string toDeleteDb,bool backup=false) {
 
             bool result = false;
             _mutex.WaitOne();
             try {
+
+                bool runNormal = false;
                 //string fileName = "mysql";
                 //string args = string.Format("-h{0} -P{1} -u{2} -p{3}", dbServer.ServerHost, dbServer.ServerPort, dbServer.UserName, dbServer.Userpwd);
+                if (backup) {
+                    string backSqlFilePath = System.IO.Path.Combine(_backupDbDirPath,$"Mysql_{DateTime.Now.ToString("yyyyMMddHHmmss")}_{toDeleteDb}");
+                    List<string> backupDbCmdList = new List<string>() {
+                        string.Format(_backDbCmdTemplate,dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd,toDeleteDb,backSqlFilePath)
+                    };
+
+                    runNormal = RunCmd(backupDbCmdList);
+                    if (!runNormal) {
+                        _logger.LogError($"backup db {dbServer.ServerHost}:{dbServer.ServerPort} {toDeleteDb} error");
+                        return false ;
+                    }
+
+                    if (!System.IO.File.Exists(backSqlFilePath)) {
+                        _logger.LogError($"cann't not found backuped sql {backSqlFilePath}");
+                        return false;
+                    }
+                }
+
                 List<string> deleteTenantDbCmdList = new List<string>() {
                     string.Format("mysql -h{0} -P{1} -u{2} -p{3}",dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd),
                     string.Format("drop database if exists `{0}`;",toDeleteDb),
                     string.Format("exit")
                 };
 
-                bool runNormal = RunCmd(deleteTenantDbCmdList);
+                runNormal = RunCmd(deleteTenantDbCmdList);
                 if (!runNormal) {
                     _logger.LogError($"delete tenant db error");
                     return false;
                 }
 
                 result = true;
-                Task.Run(() => { _dbServerRepository.AddDbCountByDbserver(dbServer.Id, false); }).ConfigureAwait(false);
+                
             } catch(Exception ex) {
                 _logger.LogError(ex, $"delete tenant db {dbServer?.ServerHost} {toDeleteDb} error");
             } finally {
@@ -324,7 +425,7 @@ namespace IdentityServer.MultiTenant.Service
                 return false;
             }
 
-            return DeleteTenantDb(dbServer,dbName);
+            return DeleteTenantDb(dbServer,dbName,true);
         }
 
         public static async Task<bool> CheckConnect(DbServerModel dbServer) {
@@ -348,6 +449,29 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
+        public static async Task<Tuple<bool,string>> CheckConnectAndVersion(DbServerModel dbServer) {
+
+            //"Data Source=127.0.0.1;Port=13306;User Id=devuser;Password=devpwd;Charset=utf8;",
+            string connStr = string.Format("Data Source={0};Port={1};User Id={2};Password={3};", dbServer.ServerHost, dbServer.ServerPort, dbServer.UserName, dbServer.Userpwd);
+            var connection = new MySqlConnection(connStr);
+
+            string version = string.Empty;
+            bool result = false;
+            try {
+                await connection.OpenAsync();
+                version = connection.ServerVersion;
+                result = true;
+            } catch (Exception ex) {
+                result = false;
+            } finally {
+                connection?.Close();
+                connection?.Dispose();
+                connection = null;
+            }
+
+            return new Tuple<bool, string>(result,version);
+        }
+
         public async Task<bool> CheckConnect(string connStr) {
             if (string.IsNullOrEmpty(connStr)) {
                 return false;
@@ -356,9 +480,11 @@ namespace IdentityServer.MultiTenant.Service
             //"Data Source=127.0.0.1;Port=13306;User Id=devuser;Password=devpwd;Charset=utf8;",
             var connection = new MySqlConnection(connStr);
 
+            string version = string.Empty;
             bool result = false;
             try {
                 await connection.OpenAsync();
+                version = connection.ServerVersion;
                 result = true;
             } catch (Exception ex) {
                 result = false;
@@ -369,6 +495,30 @@ namespace IdentityServer.MultiTenant.Service
             }
 
             return result;
+        }
+
+        public async Task<Tuple<bool,string>> CheckConnectAndVersion(string connStr) {
+            if (string.IsNullOrEmpty(connStr)) {
+                return new Tuple<bool, string>(false,string.Empty);
+            }
+
+            //"Data Source=127.0.0.1;Port=13306;User Id=devuser;Password=devpwd;Charset=utf8;",
+            var connection = new MySqlConnection(connStr);
+            string version= string.Empty;
+            bool result = false;
+            try {
+                await connection.OpenAsync();
+                version = connection.ServerVersion;
+                result = true;
+            } catch (Exception ex) {
+                result = false;
+            } finally {
+                connection?.Close();
+                connection?.Dispose();
+                connection = null;
+            }
+
+            return new Tuple<bool, string>(result,version);
         }
 
         private bool RunCmd(List<string> innerCmdStrList) {
@@ -404,7 +554,7 @@ namespace IdentityServer.MultiTenant.Service
                         SpinWait.SpinUntil(() => outputSignal == 0, 100);
                     }
 
-                    errBuilder.Append(args.Data);
+                    outputBuilder.Append(args.Data);
 
                     Volatile.Write(ref outputSignal, 0);
                 }
@@ -412,6 +562,7 @@ namespace IdentityServer.MultiTenant.Service
 
             p.Start();
             p.BeginErrorReadLine();
+            p.BeginOutputReadLine();
 
             bool runNormal = true;
             if (innerCmdStrList != null && innerCmdStrList.Any()) {
@@ -476,7 +627,7 @@ namespace IdentityServer.MultiTenant.Service
                     }
                 }
 
-                Thread.Sleep(100*3);
+                Thread.Sleep(1000);
             }
 
             errMsg = string.Empty;

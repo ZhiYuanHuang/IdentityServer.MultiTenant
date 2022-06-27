@@ -20,7 +20,7 @@
                 <div class="form-group">
                     <label for="tenantDomain">TenantDomain:</label>
                     <input type="text" value="@Model.TenantDomain" readonly class="form-control" id="tenantdomain" placeholder="Enter tenantdomain" name="tenantdomain" required>
-                    
+
                 </div>
                 <div class="form-group">
                     <label for="tenantname">TenantName:</label>
@@ -48,20 +48,20 @@
                         }
                     </select>
                 </div>
-               
+
                 <input type="button" class="btn btn-primary" value="执行迁移" onclick="executeMigrate()" />
             </form>
         </div>
-        
+
     </div>
+
     
 </div>
 
-@section scripts
-{
-    @*<script src="~/js/sitecommon.js"></script>*@
-    <script>
-        function addOrUpdateClient() {
+<!--@section scripts
+{-->
+    <!--<script>
+        function executeMigrate() {
             var jsonObj = {
                 "Identifier": $('#identifier').val(),
                 "TenantDomain": $('#tenantdomain').val(),
@@ -96,4 +96,4 @@
         
        
     </script>
-}
+}-->
