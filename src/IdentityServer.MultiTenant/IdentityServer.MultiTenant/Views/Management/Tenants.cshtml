@@ -74,6 +74,7 @@
         </table>
     </div>
 </div>
+
 <br />
 <br />
 <div>
@@ -110,6 +111,7 @@
 </div>
 
 @section scripts{ 
+    <script src="https://cdn.socket.io/socket.io-1.2.0.js"></script>
     <script>
         function selectDomain(tenantDomain) {
             window.location.href = "/sys/management/Tenants?tenantDomain=" + tenantDomain;
@@ -129,36 +131,50 @@
             xhr.send(null);
         }
 
-        function executeMigrate() {
-            var jsonObj = {
-                "Identifier": $('#identifier').val(),
-                "TenantDomain": $('#tenantdomain').val(),
-                "DbServerId": parseInt($('#tomigrateserver').val()),
+        function executeMigrate(node) {
+            var tenantDomain = $('#tenantdomain').val();
+            var identifier = $('#identifier').val();
+            var dbServerId = parseInt($('#tomigrateserver').val());
 
-            };
+            window.read = function (info) {
+                var str = $('#migratelogbox').val();
+                $('#migratelogbox').val(str + info);
+                document.getElementById('migratelogbox').scrollTop = document.getElementById('migratelogbox').scrollHeight;
+            }
 
-            $.ajax({
-                url: "/sys/api/SysTenant/MigrateTenant",
-                type: "post",
-                data: JSON.stringify(jsonObj),
-                contentType: "application/json",
-                dataType: "json",
-                async: false,
-                success: function (data) {
-                    if (data.errorCode == 0) {
-                        window.location.reload();
-                        alert("迁移成功");
-                    }
-                    else {
-                        console.log(data.errorMsg);
-                        alert(data.errorMsg);
-                    }
-                },
-                error: function (e) {
-                    console.log(e.error);
-                    alert(e);
-                }
-            })
+            var iframeUrl = "/sys/api/SysTenant/MigrateTenant?TenantDomain=" + tenantDomain + "&Identifier=" + identifier + "&DbServerId="+dbServerId;
+
+            $('#migratelogdiv').append('<iframe style="display:none" src="'+iframeUrl+'"></iframe>');
+
+            //var jsonObj = {
+            //    "Identifier": identifier,
+            //    "TenantDomain": tenantDomain,
+            //    "DbServerId": dbServerId,
+            //};
+
+            
+            //$.ajax({
+            //    url: "/sys/api/SysTenant/MigrateTenant",
+            //    type: "post",
+            //    data: JSON.stringify(jsonObj),
+            //    contentType: "application/json",
+            //    dataType: "json",
+            //    async: false,
+            //    success: function (data) {
+            //        if (data.errorCode == 0) {
+            //            window.location.reload();
+            //            alert("迁移成功");
+            //        }
+            //        else {
+            //            console.log(data.errorMsg);
+            //            alert(data.errorMsg);
+            //        }
+            //    },
+            //    error: function (e) {
+            //        console.log(e.error);
+            //        alert(e);
+            //    }
+            //})
         }
 
         function createTenant() {

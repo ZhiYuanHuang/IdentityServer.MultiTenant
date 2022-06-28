@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Data.SQLite;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -203,7 +204,7 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
-        public bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto, DbServerModel originDbServer, DbServerModel dbServer, out string errMsg) {
+        public bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto, DbServerModel originDbServer, DbServerModel dbServer, ref StringBuilder migrateLogBuilder, out string errMsg) {
             errMsg = "sqlite db not support migrate";
             return false;
         }

@@ -185,7 +185,7 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
-        public bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto,DbServerModel originDbServer,DbServerModel dbServer,out string errMsg) {
+        public bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto,DbServerModel originDbServer,DbServerModel dbServer, ref StringBuilder migrateLogBuilder, out string errMsg) {
 
             string originDbConn = tenantInfoDto.ConnectionString;
             errMsg = string.Empty;
@@ -198,6 +198,7 @@ namespace IdentityServer.MultiTenant.Service
             bool connSuccess= CheckConnect(dbServer).Result;
             if (!connSuccess) {
                 errMsg = "to migrate db server can not connect";
+                migrateLogBuilder.AppendLine(errMsg);
                 return false;
             }
 
@@ -238,9 +239,10 @@ namespace IdentityServer.MultiTenant.Service
                     "exit"
                 };
 
-                bool runNormal = RunCmd(creatTenantDbCmdList);
+                bool runNormal = RunCmd(creatTenantDbCmdList,migrateLogBuilder);
                 if (!runNormal) {
-                    _logger.LogError("create tmp migrating db");
+                    _logger.LogError("create tmp migrating db error");
+                    migrateLogBuilder.AppendLine("create tmp migrating db error");
                     return false;
                 }
 
@@ -255,12 +257,13 @@ namespace IdentityServer.MultiTenant.Service
                     ),
                 };
 
-                runNormal = RunCmd(copyCmdList);
+                runNormal = RunCmd(copyCmdList, migrateLogBuilder);
                 if (!runNormal) {
                     Task.Run(() => {
                         DeleteTenantDb(dbServer, migratingDbName);
                     }).ConfigureAwait(false);
-                    _logger.LogError("migrating tmp tenant db");
+                    _logger.LogError("migrating tmp tenant db error");
+                    migrateLogBuilder.AppendLine("migrating tmp tenant db error");
                     return false;
                 }
 
@@ -274,12 +277,13 @@ namespace IdentityServer.MultiTenant.Service
                     "exit"
                 };
 
-                runNormal = RunCmd(creatTenantDbCmdList);
+                runNormal = RunCmd(creatTenantDbCmdList, migrateLogBuilder);
                 if (!runNormal) {
                     Task.Run(() => {
                         DeleteTenantDb(dbServer, migratingDbName);
                     }).ConfigureAwait(false);
-                    _logger.LogError("create real migrating db");
+                    _logger.LogError("create real migrating db error");
+                    migrateLogBuilder.AppendLine("create real migrating db error");
                     return false;
                 }
 
@@ -294,14 +298,14 @@ namespace IdentityServer.MultiTenant.Service
                     ),
                 };
 
-                runNormal = RunCmd(copyCmdList);
+                runNormal = RunCmd(copyCmdList, migrateLogBuilder);
                 if (!runNormal) {
                     Task.Run(() => {
                         DeleteTenantDb(dbServer, migratingDbName);
                         DeleteTenantDb(dbServer, originDbName);
                     }).ConfigureAwait(false);
-                    _logger.LogError("copy tmp tenant db to real db");
-                    
+                    _logger.LogError("copy tmp tenant db to real db error");
+                    migrateLogBuilder.AppendLine("copy tmp tenant db to real db error");
                     return false;
                 }
 
@@ -325,6 +329,7 @@ namespace IdentityServer.MultiTenant.Service
             } catch (Exception ex) {
                 result = false;
                 _logger.LogError(ex, $"migrate tenant db {dbServer?.ServerHost} {originDbName} error");
+                migrateLogBuilder.AppendLine($"migrate tenant db {dbServer?.ServerHost} {originDbName} error");
             } finally {
                 _mutex.ReleaseMutex();
             }
@@ -521,7 +526,7 @@ namespace IdentityServer.MultiTenant.Service
             return new Tuple<bool, string>(result,version);
         }
 
-        private bool RunCmd(List<string> innerCmdStrList) {
+        private bool RunCmd(List<string> innerCmdStrList,StringBuilder migrateLogBuilder=null) {
 
             System.Diagnostics.Process p = new System.Diagnostics.Process();
             p.StartInfo.WorkingDirectory = _mysqlBinDirPath;
@@ -540,6 +545,7 @@ namespace IdentityServer.MultiTenant.Service
                         SpinWait.SpinUntil(()=>errorSignal==0,100);
                     }
 
+                    migrateLogBuilder?.AppendLine(args.Data);
                     errBuilder.Append(args.Data);
 
                     Volatile.Write(ref errorSignal,0);
@@ -554,6 +560,7 @@ namespace IdentityServer.MultiTenant.Service
                         SpinWait.SpinUntil(() => outputSignal == 0, 100);
                     }
 
+                    migrateLogBuilder?.AppendLine(args.Data);
                     outputBuilder.Append(args.Data);
 
                     Volatile.Write(ref outputSignal, 0);
@@ -570,6 +577,7 @@ namespace IdentityServer.MultiTenant.Service
                 foreach (var cmd in innerCmdStrList) {
                     errBuilder.Clear();
                     outputBuilder.Clear();
+                    migrateLogBuilder?.AppendLine(cmd);
                     p.StandardInput.WriteLine(cmd);
 
                     if (string.Compare(cmd, "exit",true) == 0) {

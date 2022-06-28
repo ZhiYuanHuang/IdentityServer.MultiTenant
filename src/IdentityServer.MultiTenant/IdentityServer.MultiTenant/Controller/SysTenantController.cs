@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant.Controller
@@ -201,7 +202,8 @@ namespace IdentityServer.MultiTenant.Controller
                 return new AppResponseDto(false) { ErrorMsg = "cann't migrate between not same version mysql" };
             }
 
-            if (!_dbOperaService.MigrateTenantDb(ref existedTenantInfo,originDbServer,toMigratingDbServer,out string errMsg)) {
+            StringBuilder migrateBuilder = new StringBuilder();
+            if (!_dbOperaService.MigrateTenantDb(ref existedTenantInfo,originDbServer,toMigratingDbServer,ref migrateBuilder, out string errMsg)) {
                 return new AppResponseDto(false) { ErrorMsg=errMsg};
             }
 
@@ -212,9 +214,177 @@ namespace IdentityServer.MultiTenant.Controller
                 return new AppResponseDto(false) { ErrorMsg = errMsg };
             }
 
+            
+
             return new AppResponseDto() {
 
             };
+        }
+
+        [HttpGet]
+        public async Task MigrateTenant([FromQuery]string TenantDomain,[FromQuery]string Identifier,[FromQuery]Int64? DbServerId) {
+            var response = HttpContext.Response;
+            response.StatusCode = 200;
+            response.ContentType = "text/html; charset=UTF-8";
+
+            await response.WriteAsync("<script> top.read('Migrate Start!\\n') </script>");
+
+            await response.Body.FlushAsync();
+
+            if (string.IsNullOrEmpty(TenantDomain) || string.IsNullOrEmpty(Identifier)) {
+                await response.WriteAsync("<script> top.read('tenant can not be empty!\\n') </script>");
+
+                await response.Body.FlushAsync();
+                await response.CompleteAsync();
+                return;
+            }
+
+            Int64? toMigrateDbServerId = DbServerId;
+            if (!toMigrateDbServerId.HasValue) {
+                await response.WriteAsync("<script> top.read('migrate db server can not empty!\\n') </script>");
+
+                await response.Body.FlushAsync();
+                await response.CompleteAsync();
+                return;
+            }
+
+            bool isExist = _tenantRepo.ExistTenant(TenantDomain, Identifier, out TenantInfoDto existedTenantInfo);
+
+            if (!isExist) {
+                await response.WriteAsync("<script> top.read('tenant not existed!\\n') </script>");
+
+                await response.Body.FlushAsync();
+                await response.CompleteAsync();
+                return;
+            }
+
+            if (string.IsNullOrEmpty(existedTenantInfo.ConnectionString) && string.IsNullOrEmpty(existedTenantInfo.EncryptedIdsConnectionString)) {
+                await response.WriteAsync("<script> top.read('tenant db conn is empty!\\n') </script>");
+
+                await response.Body.FlushAsync();
+                await response.CompleteAsync();
+                return;
+            }
+
+            if (!existedTenantInfo.DbServerId.HasValue) {
+                await response.WriteAsync("<script> top.read('tenant db server is empty!\\n') </script>");
+
+                await response.Body.FlushAsync();
+                await response.CompleteAsync();
+                return;
+            }
+
+            string originDbConn = existedTenantInfo.ConnectionString;
+            if (string.IsNullOrEmpty(existedTenantInfo.ConnectionString) && !string.IsNullOrEmpty(existedTenantInfo.EncryptedIdsConnectionString)) {
+                originDbConn = _encryptService.Decrypt_Aes(existedTenantInfo.EncryptedIdsConnectionString);
+            }
+
+            Tuple<bool, string> originDbConnResult = await _dbOperaService.CheckConnectAndVersion(originDbConn);
+            if (!originDbConnResult.Item1) {
+                await response.WriteAsync("<script> top.read('tenant db can not connect!\\n') </script>");
+
+                response.Body.Flush();
+                await response.CompleteAsync();
+                return;
+            }
+            string originVersion = DbConnStrExtension.GetMysqlGeneralVersion(originDbConnResult.Item2);
+
+            existedTenantInfo.ConnectionString = originDbConn;
+
+            var dbServerList = _dbServerRepository.GetDbServers(existedTenantInfo.DbServerId.Value);
+            if (!dbServerList.Any() || dbServerList[0].Id != existedTenantInfo.DbServerId.Value) {
+                await response.WriteAsync("<script> top.read('tenant origin db can not match!\\n') </script>");
+
+                response.Body.Flush();
+                await response.CompleteAsync();
+                return;
+            }
+            var originDbServer = dbServerList[0];
+
+            dbServerList = _dbServerRepository.GetDbServers(toMigrateDbServerId.Value);
+            if (!dbServerList.Any() || dbServerList[0].Id != toMigrateDbServerId.Value) {
+                await response.WriteAsync("<script> top.read('can not found to migrate db server!\\n') </script>");
+
+                response.Body.Flush();
+                await response.CompleteAsync();
+                return;
+            }
+            var toMigratingDbServer = dbServerList[0];
+
+            if (string.IsNullOrEmpty(toMigratingDbServer.Userpwd) && !string.IsNullOrEmpty(toMigratingDbServer.EncryptUserpwd)) {
+                toMigratingDbServer.Userpwd = _encryptService.Decrypt_Aes(toMigratingDbServer.EncryptUserpwd);
+            }
+            var migrateDbConnResult = await MysqlDbOperaService.CheckConnectAndVersion(toMigratingDbServer);
+            if (!migrateDbConnResult.Item1) {
+                await response.WriteAsync("<script> top.read('to migrate db can not connect!\\n') </script>");
+
+                response.Body.Flush();
+                await response.CompleteAsync();
+                return;
+            }
+            string toMigrateVersion = DbConnStrExtension.GetMysqlGeneralVersion(migrateDbConnResult.Item2);
+            if (string.Compare(originVersion, toMigrateVersion, true) != 0) {
+                await response.WriteAsync("<script> top.read('cann't migrate between not same version mysql!\\n') </script>");
+
+                response.Body.Flush();
+                await response.CompleteAsync();
+                return;
+            }
+
+            StringBuilder builder = new StringBuilder();
+
+            bool migrateEnd = false;
+            var sendMsgTask= Task.Run( ()=> {
+                int tmpLength = builder.Length;
+                while (!migrateEnd) {
+                    string tmpMsg = string.Empty;
+                    int tmpNewLength = builder.Length;
+                    if (tmpNewLength > tmpLength) {
+                        tmpMsg=builder.ToString(tmpLength, tmpNewLength - tmpLength);
+
+                        
+                        string encodeMsg = System.Web.HttpUtility.JavaScriptStringEncode(tmpMsg);
+
+                        response.WriteAsync($@"<script> top.read('{encodeMsg}') </script>").Wait();
+
+                        response.Body.Flush();
+
+                        tmpLength = tmpNewLength;
+                    }
+                    Task.Delay(1000 * 3).Wait();
+                }
+            });
+
+            if (!_dbOperaService.MigrateTenantDb(ref existedTenantInfo, originDbServer, toMigratingDbServer,ref builder, out string errMsg)) {
+                migrateEnd = true;
+                await sendMsgTask;
+
+                await response.WriteAsync(errMsg);
+
+                response.Body.Flush();
+                await response.CompleteAsync();
+                return;
+            }
+            migrateEnd = true;
+            await sendMsgTask;
+
+            _dbServerRepository.AddDbCountByDbserver(originDbServer, false);
+            _dbServerRepository.AddDbCountByDbserver(toMigratingDbServer);
+
+            if (!_tenantRepo.AttachDbServerToTenant(existedTenantInfo, toMigratingDbServer, out errMsg)) {
+                await response.WriteAsync(errMsg);
+
+                response.Body.Flush();
+                await response.CompleteAsync();
+                return;
+            }
+            
+            await response.WriteAsync("<script> top.read('Migrate Finish!\\n') </script>");
+
+            await response.WriteAsync("<script> alert('迁移成功'); </script>");
+            await response.Body.FlushAsync();
+            await response.CompleteAsync();
+            return;
         }
     }
 

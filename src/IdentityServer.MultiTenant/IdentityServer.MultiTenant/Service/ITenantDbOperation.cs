@@ -1,6 +1,7 @@
 ﻿using IdentityServer.MultiTenant.Dto;
 using IdentityServer.MultiTenant.Models;
 using System;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant.Service
@@ -14,6 +15,6 @@ namespace IdentityServer.MultiTenant.Service
 
         bool DeleteTenantDb(DbServerModel dbServer, TenantInfoDto tenantInfo, out string errMsg);
 
-        bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto, DbServerModel originDbServer, DbServerModel dbServer, out string errMsg);
+        bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto, DbServerModel originDbServer, DbServerModel dbServer,ref StringBuilder migrateLogBuilder, out string errMsg);
     }
 }
