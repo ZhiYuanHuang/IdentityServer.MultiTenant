@@ -38,7 +38,6 @@ CREATE TABLE `dbserver`  (
 -- Records of dbserver
 -- ----------------------------
 INSERT INTO `dbserver` VALUES (5, '127.0.0.1', 3307, 'root', NULL, 2, 1, 'B2kkiVL6Denq52E34s1UTQ==');
-INSERT INTO `dbserver` VALUES (7, '129.226.101.69', 13306, 'root', NULL, 0, 0, 'AkYIrVk6SXVUMu3Gcg8lCA==');
 INSERT INTO `dbserver` VALUES (8, '172.16.0.118', 13360, 'root', NULL, -1, 1, 'B2kkiVL6Denq52E34s1UTQ==');
 
 -- ----------------------------
