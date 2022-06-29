@@ -214,8 +214,6 @@ namespace IdentityServer.MultiTenant.Controller
                 return new AppResponseDto(false) { ErrorMsg = errMsg };
             }
 
-            
-
             return new AppResponseDto() {
 
             };
@@ -227,12 +225,12 @@ namespace IdentityServer.MultiTenant.Controller
             response.StatusCode = 200;
             response.ContentType = "text/html; charset=UTF-8";
 
-            await response.WriteAsync("<script> top.read('Migrate Start!\\n') </script>");
+            await response.WriteAsync(getScriptResp("Migrate Start!\n"));
 
             await response.Body.FlushAsync();
 
             if (string.IsNullOrEmpty(TenantDomain) || string.IsNullOrEmpty(Identifier)) {
-                await response.WriteAsync("<script> top.read('tenant can not be empty!\\n') </script>");
+                await response.WriteAsync(getScriptResp("tenant can not be empty!\n",false));
 
                 await response.Body.FlushAsync();
                 await response.CompleteAsync();
@@ -241,7 +239,7 @@ namespace IdentityServer.MultiTenant.Controller
 
             Int64? toMigrateDbServerId = DbServerId;
             if (!toMigrateDbServerId.HasValue) {
-                await response.WriteAsync("<script> top.read('migrate db server can not empty!\\n') </script>");
+                await response.WriteAsync(getScriptResp("migrate db server can not empty!\n", false));
 
                 await response.Body.FlushAsync();
                 await response.CompleteAsync();
@@ -251,7 +249,7 @@ namespace IdentityServer.MultiTenant.Controller
             bool isExist = _tenantRepo.ExistTenant(TenantDomain, Identifier, out TenantInfoDto existedTenantInfo);
 
             if (!isExist) {
-                await response.WriteAsync("<script> top.read('tenant not existed!\\n') </script>");
+                await response.WriteAsync(getScriptResp("tenant not existed!\n", false));
 
                 await response.Body.FlushAsync();
                 await response.CompleteAsync();
@@ -259,7 +257,7 @@ namespace IdentityServer.MultiTenant.Controller
             }
 
             if (string.IsNullOrEmpty(existedTenantInfo.ConnectionString) && string.IsNullOrEmpty(existedTenantInfo.EncryptedIdsConnectionString)) {
-                await response.WriteAsync("<script> top.read('tenant db conn is empty!\\n') </script>");
+                await response.WriteAsync(getScriptResp("tenant db conn is empty!\n", false));
 
                 await response.Body.FlushAsync();
                 await response.CompleteAsync();
@@ -267,7 +265,7 @@ namespace IdentityServer.MultiTenant.Controller
             }
 
             if (!existedTenantInfo.DbServerId.HasValue) {
-                await response.WriteAsync("<script> top.read('tenant db server is empty!\\n') </script>");
+                await response.WriteAsync(getScriptResp("tenant db server is empty!\n", false));
 
                 await response.Body.FlushAsync();
                 await response.CompleteAsync();
@@ -281,7 +279,7 @@ namespace IdentityServer.MultiTenant.Controller
 
             Tuple<bool, string> originDbConnResult = await _dbOperaService.CheckConnectAndVersion(originDbConn);
             if (!originDbConnResult.Item1) {
-                await response.WriteAsync("<script> top.read('tenant db can not connect!\\n') </script>");
+                await response.WriteAsync(getScriptResp("tenant db can not connect!\n", false));
 
                 response.Body.Flush();
                 await response.CompleteAsync();
@@ -293,7 +291,7 @@ namespace IdentityServer.MultiTenant.Controller
 
             var dbServerList = _dbServerRepository.GetDbServers(existedTenantInfo.DbServerId.Value);
             if (!dbServerList.Any() || dbServerList[0].Id != existedTenantInfo.DbServerId.Value) {
-                await response.WriteAsync("<script> top.read('tenant origin db can not match!\\n') </script>");
+                await response.WriteAsync(getScriptResp("tenant origin db can not match!\n", false));
 
                 response.Body.Flush();
                 await response.CompleteAsync();
@@ -303,7 +301,7 @@ namespace IdentityServer.MultiTenant.Controller
 
             dbServerList = _dbServerRepository.GetDbServers(toMigrateDbServerId.Value);
             if (!dbServerList.Any() || dbServerList[0].Id != toMigrateDbServerId.Value) {
-                await response.WriteAsync("<script> top.read('can not found to migrate db server!\\n') </script>");
+                await response.WriteAsync(getScriptResp("can not found to migrate db server!\n", false));
 
                 response.Body.Flush();
                 await response.CompleteAsync();
@@ -316,7 +314,7 @@ namespace IdentityServer.MultiTenant.Controller
             }
             var migrateDbConnResult = await MysqlDbOperaService.CheckConnectAndVersion(toMigratingDbServer);
             if (!migrateDbConnResult.Item1) {
-                await response.WriteAsync("<script> top.read('to migrate db can not connect!\\n') </script>");
+                await response.WriteAsync(getScriptResp("to migrate db can not connect!\n", false));
 
                 response.Body.Flush();
                 await response.CompleteAsync();
@@ -324,7 +322,7 @@ namespace IdentityServer.MultiTenant.Controller
             }
             string toMigrateVersion = DbConnStrExtension.GetMysqlGeneralVersion(migrateDbConnResult.Item2);
             if (string.Compare(originVersion, toMigrateVersion, true) != 0) {
-                await response.WriteAsync("<script> top.read('cann't migrate between not same version mysql!\\n') </script>");
+                await response.WriteAsync(getScriptResp("cann't migrate between not same version mysql!\n", false));
 
                 response.Body.Flush();
                 await response.CompleteAsync();
@@ -342,10 +340,7 @@ namespace IdentityServer.MultiTenant.Controller
                     if (tmpNewLength > tmpLength) {
                         tmpMsg=builder.ToString(tmpLength, tmpNewLength - tmpLength);
 
-                        
-                        string encodeMsg = System.Web.HttpUtility.JavaScriptStringEncode(tmpMsg);
-
-                        response.WriteAsync($@"<script> top.read('{encodeMsg}') </script>").Wait();
+                        response.WriteAsync(getScriptResp(tmpMsg)).Wait();
 
                         response.Body.Flush();
 
@@ -359,7 +354,7 @@ namespace IdentityServer.MultiTenant.Controller
                 migrateEnd = true;
                 await sendMsgTask;
 
-                await response.WriteAsync(errMsg);
+                await response.WriteAsync(getScriptResp(errMsg,false));
 
                 response.Body.Flush();
                 await response.CompleteAsync();
@@ -372,19 +367,31 @@ namespace IdentityServer.MultiTenant.Controller
             _dbServerRepository.AddDbCountByDbserver(toMigratingDbServer);
 
             if (!_tenantRepo.AttachDbServerToTenant(existedTenantInfo, toMigratingDbServer, out errMsg)) {
-                await response.WriteAsync(errMsg);
+                await response.WriteAsync(getScriptResp(errMsg, false));
 
                 response.Body.Flush();
                 await response.CompleteAsync();
                 return;
             }
-            
-            await response.WriteAsync("<script> top.read('Migrate Finish!\\n') </script>");
 
-            await response.WriteAsync("<script> alert('迁移成功'); </script>");
+            //"<script> top.read('Migrate Finish!\\n');alert('迁移成功'); </script>"
+            await response.WriteAsync(getScriptResp("Migrate Finish!\n",true));
+
+            //await response.WriteAsync("<script> alert('迁移成功'); </script>");
             await response.Body.FlushAsync();
             await response.CompleteAsync();
             return;
+        }
+
+        private const string _scriptMsgTemplate = "<script> top.read('{0}') </script>";
+        private const string _scriptResultTemplate = "<script> alert('{0}') </script>";
+        private static string getScriptResp(string msg,bool? result = null) {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine(string.Format(_scriptMsgTemplate, System.Web.HttpUtility.JavaScriptStringEncode(msg)));
+            if (result.HasValue) {
+                builder.AppendLine(string.Format(_scriptResultTemplate, result.Value?"迁移正常":"迁移异常"));
+            }
+            return builder.ToString();
         }
     }
 

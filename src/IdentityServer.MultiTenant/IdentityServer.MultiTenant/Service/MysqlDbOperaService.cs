@@ -198,6 +198,7 @@ namespace IdentityServer.MultiTenant.Service
             bool connSuccess= CheckConnect(dbServer).Result;
             if (!connSuccess) {
                 errMsg = "to migrate db server can not connect";
+                migrateLogBuilder?.AppendLine();
                 migrateLogBuilder.AppendLine(errMsg);
                 return false;
             }
@@ -239,9 +240,11 @@ namespace IdentityServer.MultiTenant.Service
                     "exit"
                 };
 
+                migrateLogBuilder?.AppendLine("创建迁移临时库");
                 bool runNormal = RunCmd(creatTenantDbCmdList,migrateLogBuilder);
                 if (!runNormal) {
                     _logger.LogError("create tmp migrating db error");
+                    migrateLogBuilder?.AppendLine();
                     migrateLogBuilder.AppendLine("create tmp migrating db error");
                     return false;
                 }
@@ -257,13 +260,14 @@ namespace IdentityServer.MultiTenant.Service
                     ),
                 };
 
+                migrateLogBuilder?.AppendLine("拷贝原始数据库至临时库");
                 runNormal = RunCmd(copyCmdList, migrateLogBuilder);
                 if (!runNormal) {
-                    Task.Run(() => {
-                        DeleteTenantDb(dbServer, migratingDbName);
-                    }).ConfigureAwait(false);
-                    _logger.LogError("migrating tmp tenant db error");
+                    migrateLogBuilder?.AppendLine();
                     migrateLogBuilder.AppendLine("migrating tmp tenant db error");
+                    migrateLogBuilder?.AppendLine("回撤中。。。");
+                    DeleteTenantDb(dbServer, migratingDbName,migrateLogBuilder);
+                    _logger.LogError("migrating tmp tenant db error");
                     return false;
                 }
 
@@ -277,13 +281,15 @@ namespace IdentityServer.MultiTenant.Service
                     "exit"
                 };
 
+                migrateLogBuilder?.AppendLine("创建最终实际数据库");
                 runNormal = RunCmd(creatTenantDbCmdList, migrateLogBuilder);
                 if (!runNormal) {
-                    Task.Run(() => {
-                        DeleteTenantDb(dbServer, migratingDbName);
-                    }).ConfigureAwait(false);
-                    _logger.LogError("create real migrating db error");
+                    migrateLogBuilder?.AppendLine();
                     migrateLogBuilder.AppendLine("create real migrating db error");
+                    migrateLogBuilder?.AppendLine("回撤中。。。");
+                    DeleteTenantDb(dbServer, migratingDbName, migrateLogBuilder);
+                    _logger.LogError("create real migrating db error");
+                  
                     return false;
                 }
 
@@ -298,14 +304,16 @@ namespace IdentityServer.MultiTenant.Service
                     ),
                 };
 
+                migrateLogBuilder?.AppendLine("拷贝临时库至最终实际数据库");
                 runNormal = RunCmd(copyCmdList, migrateLogBuilder);
                 if (!runNormal) {
-                    Task.Run(() => {
-                        DeleteTenantDb(dbServer, migratingDbName);
-                        DeleteTenantDb(dbServer, originDbName);
-                    }).ConfigureAwait(false);
-                    _logger.LogError("copy tmp tenant db to real db error");
+                    migrateLogBuilder?.AppendLine();
                     migrateLogBuilder.AppendLine("copy tmp tenant db to real db error");
+                    migrateLogBuilder?.AppendLine("回撤中。。。");
+                    DeleteTenantDb(dbServer, migratingDbName, migrateLogBuilder);
+                    DeleteTenantDb(dbServer, originDbName,migrateLogBuilder);
+                    _logger.LogError("copy tmp tenant db to real db error");
+                    
                     return false;
                 }
 
@@ -318,10 +326,11 @@ namespace IdentityServer.MultiTenant.Service
 
                 #region delete tmp and origin db
 
-                Task.Run(() => {
-                    DeleteTenantDb(dbServer,migratingDbName);
-                    DeleteTenantDb(originDbServer,originDbName,true);
-                }).ConfigureAwait(false);
+                migrateLogBuilder?.AppendLine();
+                migrateLogBuilder?.AppendLine("删除临时库");
+                DeleteTenantDb(dbServer, migratingDbName, migrateLogBuilder);
+                migrateLogBuilder?.AppendLine("删除原数据库");
+                DeleteTenantDb(originDbServer, originDbName, migrateLogBuilder,true);
 
                 #endregion
 
@@ -337,7 +346,12 @@ namespace IdentityServer.MultiTenant.Service
             return result;
         }
 
-        public bool DeleteTenantDb(DbServerModel dbServer,string toDeleteDb,bool backup=false) {
+        public bool DeleteTenantDb(DbServerModel dbServer, string toDeleteDb, bool backup = false) {
+
+            return DeleteTenantDb(dbServer,toDeleteDb,null,backup);
+        }
+
+        private bool DeleteTenantDb(DbServerModel dbServer,string toDeleteDb, StringBuilder migrateLogBuilder = null, bool backup=false) {
 
             bool result = false;
             _mutex.WaitOne();
@@ -352,14 +366,19 @@ namespace IdentityServer.MultiTenant.Service
                         string.Format(_backDbCmdTemplate,dbServer.ServerHost,dbServer.ServerPort,dbServer.UserName,dbServer.Userpwd,toDeleteDb,backSqlFilePath)
                     };
 
-                    runNormal = RunCmd(backupDbCmdList);
+                    migrateLogBuilder?.AppendLine("备份原数据库。。。");
+                    runNormal = RunCmd(backupDbCmdList, migrateLogBuilder);
                     if (!runNormal) {
-                        _logger.LogError($"backup db {dbServer.ServerHost}:{dbServer.ServerPort} {toDeleteDb} error");
+                        var tmpMsg = $"backup db {dbServer.ServerHost}:{dbServer.ServerPort} {toDeleteDb} error";
+                        migrateLogBuilder?.AppendLine(tmpMsg);
+                        _logger.LogError(tmpMsg);
                         return false ;
                     }
 
                     if (!System.IO.File.Exists(backSqlFilePath)) {
-                        _logger.LogError($"cann't not found backuped sql {backSqlFilePath}");
+                        var tmpMsg = $"cann't not found backuped sql {backSqlFilePath}";
+                        migrateLogBuilder?.AppendLine(tmpMsg);
+                        _logger.LogError(tmpMsg);
                         return false;
                     }
                 }
@@ -370,9 +389,11 @@ namespace IdentityServer.MultiTenant.Service
                     string.Format("exit")
                 };
 
-                runNormal = RunCmd(deleteTenantDbCmdList);
+                runNormal = RunCmd(deleteTenantDbCmdList,migrateLogBuilder);
                 if (!runNormal) {
-                    _logger.LogError($"delete tenant db error");
+                    var tmpMsg = $"delete tenant db error";
+                    migrateLogBuilder?.AppendLine(tmpMsg);
+                    _logger.LogError(tmpMsg);
                     return false;
                 }
 
@@ -430,7 +451,7 @@ namespace IdentityServer.MultiTenant.Service
                 return false;
             }
 
-            return DeleteTenantDb(dbServer,dbName,true);
+            return DeleteTenantDb(dbServer,dbName,null,true);
         }
 
         public static async Task<bool> CheckConnect(DbServerModel dbServer) {
@@ -573,11 +594,15 @@ namespace IdentityServer.MultiTenant.Service
 
             bool runNormal = true;
             if (innerCmdStrList != null && innerCmdStrList.Any()) {
-
+                bool firstCmd = true;
                 foreach (var cmd in innerCmdStrList) {
                     errBuilder.Clear();
                     outputBuilder.Clear();
-                    migrateLogBuilder?.AppendLine(cmd);
+                    if(firstCmd) {
+                        firstCmd = false;
+                    } else {
+                        migrateLogBuilder?.AppendLine($"mysql> {cmd}");
+                    }
                     p.StandardInput.WriteLine(cmd);
 
                     if (string.Compare(cmd, "exit",true) == 0) {
@@ -596,7 +621,8 @@ namespace IdentityServer.MultiTenant.Service
             p.StandardInput.WriteLine("exit");
 
             p.WaitForExit(1000*1);
-      
+
+            migrateLogBuilder?.AppendLine();
             return runNormal;
         }
 
