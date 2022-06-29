@@ -25,4 +25,28 @@
 8. 租户可由api接口或系统管理页面创建，其中api接口由 管理数据库 sys.identityserver.db 的 client_credentials 模式进行登录授权，管理页面提供管理功能，如：启用/删除租户、迁移数据库功能（使用于mysql）;
 9. api接口的client 由系统管理页面创建，client的token包含 domain 等信息，经由api接口创建的租户则使用此 domain 域名；
 
+## 事项
+
+1. 地址信息：后台基地址为 {ip:port}/sys/，api基地址为 {ip:port}/manage/
+
 ## 后台管理功能截图
+
+1. 创建 domain 信息
+
+![创建 Domain ](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/domains.png)
+
+2. 创建 client 信息
+
+![创建 Client](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/clients.png)
+
+3. 创建 db server 信息
+
+![创建 db server](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/dbservers.png)
+
+4.创建 tenant 信息
+
+![创建 tenant](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/tenants.png)
+
+5.迁移 tenant 数据库
+
+![迁移 数据库](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/migrate.png)
