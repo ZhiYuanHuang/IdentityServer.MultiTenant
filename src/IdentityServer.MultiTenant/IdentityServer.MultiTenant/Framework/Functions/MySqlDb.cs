@@ -9,7 +9,7 @@ using System.Reflection;
 
 namespace IdentityServer.MultiTenant.Framework
 {
-    public class MySqlDb
+    public class MySqlDb: IDbFunc
     {
         private const string MYSQL_CONNECTION = "MySqlConnection";
         private const string MYSQL_TRANSACTION = "MySqlTransaction";
@@ -29,9 +29,9 @@ namespace IdentityServer.MultiTenant.Framework
 
         private ILogger<MySqlDb> _logger;
 
-        public MySqlDb(ILogger<MySqlDb> logger,string connectionString) {
+        public MySqlDb(ILoggerFactory loggerFactory,string connectionString) {
 
-            _logger = logger;
+            _logger = loggerFactory.CreateLogger<MySqlDb>();
 
             _connectionString = connectionString;
             {

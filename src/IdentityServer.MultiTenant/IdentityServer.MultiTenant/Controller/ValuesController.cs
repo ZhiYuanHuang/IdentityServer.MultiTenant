@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 namespace IdentityServer.MultiTenant.Controller
 {
     [Route("api/[controller]")]
+    //[Route("{__tenant__=}/api/[controller]/[action]")]
     [ApiController]
     public class ValuesController : ControllerBase
     {
@@ -22,7 +23,7 @@ namespace IdentityServer.MultiTenant.Controller
 
         }
         [HttpGet]
-        [Authorize(Policy = "sysManagePolicy")] //(Policy  = "sysManagePolicy")
+        [Authorize(Policy = "manageTenantPolicy")] //(Policy  = "sysManagePolicy")
         public AppResponseDto Get() {
            
             return new AppResponseDto() { ErrorCode=0,ErrorMsg= _contextTenant.TenantInfo.Name };

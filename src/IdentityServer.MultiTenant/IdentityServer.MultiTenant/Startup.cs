@@ -13,14 +13,17 @@ using IdentityServer.MultiTenant.MultiStrategy;
 using IdentityServer.MultiTenant.Repository;
 using IdentityServer.MultiTenant.Service;
 using IdentityServer.MultiTenant.TenantStore;
+using IdentityServer4;
 using IdentityServer4.AccessTokenValidation;
 using IdentityServer4.Services;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
@@ -29,6 +32,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant
 {
@@ -45,6 +49,8 @@ namespace IdentityServer.MultiTenant
 
         public void ConfigureServices(IServiceCollection services)
         {
+            services.Configure<KestrelServerOptions>(x => x.AllowSynchronousIO = true)
+                .Configure<IISServerOptions>(x=>x.AllowSynchronousIO=true);
             // uncomment, if you want to add an MVC-based UI
             //services.AddControllersWithViews();
             services.AddControllersWithViews(options => {
@@ -60,14 +66,15 @@ namespace IdentityServer.MultiTenant
             var sysIdsConnStr = Configuration.GetConnectionString("SysIdsConnection");
 
             services.AddMultiTenant<ExtendTenantInfo>()
-                .WithStrategy<ExHostStrategy>(ServiceLifetime.Singleton, "__tenant__.*")  //$"__tenant__.{publishHost}"
-                                                                                          //.WithConfigurationStore()
-                                                                                          //.WithStore
                 .WithStore<IdsMulTenantStoreV1<ExtendTenantInfo>>(ServiceLifetime.Scoped, (provider) => {
                     var cache = provider.GetRequiredService<IDistributedCache>();
                     var tenantRepo = provider.GetRequiredService<TenantRepository>();
                     return new IdsMulTenantStoreV1<ExtendTenantInfo>(tenantRepo, provider.GetRequiredService<ContextSystem>(), sysIdsConnStr, cache, MulTenantConstants.TenantToken, TimeSpan.FromSeconds(3));
                 })
+                .WithStrategy<ExHostStrategy>(ServiceLifetime.Singleton, "__tenant__.*")  //$"__tenant__.{publishHost}"
+                                                                                          //.WithConfigurationStore()
+                                                                                          //.WithStore
+                .WithRouteStrategy()
                 //.WithInMemoryStore(options => { 
                 //     options.IsCaseSensitive = true;
                 //    options.Tenants.Add(new ExtendTenantInfo { Id = System.Guid.NewGuid().ToString(), Identifier = "test1", Name = "testTenant1", EncryptedIdsConnectionString = emptyConnectionString });
@@ -79,29 +86,27 @@ namespace IdentityServer.MultiTenant
                     int publishPort = Configuration.GetValue<int>("PublishPort");
                     o.Authority = $"http://{tenantinfo.Identifier}.{publishHost}:{publishPort}";// "http://localhost:5000";
                     o.RequireHttpsMetadata = false;
-                })
-                ;
-
+                });
+           
             services.AddDbContext<AspNetAccountDbContext>((provider,options) => {
                 var contextTenant = provider.GetRequiredService<ContextTenant>();
+                string realIdsConnStr = string.Empty;
                 if (contextTenant.TenantInfo == null) {
-                    options.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                    return;
+                    realIdsConnStr = emptyConnectionString;
+                } else {
+                    realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
+                    if (string.IsNullOrEmpty(realIdsConnStr) && !string.IsNullOrEmpty(contextTenant.TenantInfo.EncryptedIdsConnectionString)) {
+                        var encryptService = provider.GetRequiredService<EncryptService>();
+                        string encryptedIdsConnStr = encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
+                        realIdsConnStr = encryptedIdsConnStr;
+                    }
+
+                    if (string.IsNullOrEmpty(realIdsConnStr)) {
+                        realIdsConnStr = emptyConnectionString;
+                    }
                 }
 
-                string realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
-                if(string.IsNullOrEmpty(realIdsConnStr)) {
-                    var encryptService = provider.GetRequiredService<EncryptService>();
-                    string encryptedIdsConnStr =encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
-                    realIdsConnStr = encryptedIdsConnStr;
-                }
-
-                if (string.IsNullOrEmpty(realIdsConnStr)) {
-                    options.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                    return;
-                }
-
-                options.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                options.UseDbConn(realIdsConnStr);
             });
 
             services.AddIdentity<ApplicationUser, IdentityRole>()
@@ -120,6 +125,13 @@ namespace IdentityServer.MultiTenant
                 // see https://identityserver4.readthedocs.io/en/latest/topics/resources.html
                 options.EmitStaticAudienceClaim = true;
                 options.InputLengthRestrictions.Scope = 2000;
+
+                options.Authentication.CookieSameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+
+                string publishHost = Configuration.GetValue<string>("PublishHost");
+                int publishPort = Configuration.GetValue<int>("PublishPort");
+                options.IssuerUri = $"http://{publishHost}:{publishPort}";
+               
             })
                 //.AddInMemoryIdentityResources(Config.IdentityResources)
                 //.AddInMemoryApiScopes(Config.ApiScopes)
@@ -127,47 +139,47 @@ namespace IdentityServer.MultiTenant
                 .AddConfigurationStore(options => {
                     options.ResolveDbContextOptions = (provider, builder) => {
                         var contextTenant = provider.GetRequiredService<ContextTenant>();
+                        string realIdsConnStr = string.Empty;
                         if (contextTenant.TenantInfo == null) {
-                            builder.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                            return;
+                            realIdsConnStr = emptyConnectionString;
+                        } else {
+                            realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
+                            if (string.IsNullOrEmpty(realIdsConnStr) && !string.IsNullOrEmpty(contextTenant.TenantInfo.EncryptedIdsConnectionString)) {
+                                var encryptService = provider.GetRequiredService<EncryptService>();
+                                string encryptedIdsConnStr = encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
+                                realIdsConnStr = encryptedIdsConnStr;
+                            }
+
+                            if (string.IsNullOrEmpty(realIdsConnStr)) {
+                                realIdsConnStr = emptyConnectionString;
+                            }
+
                         }
 
-                        string realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
-                        if (string.IsNullOrEmpty(realIdsConnStr)) {
-                            var encryptService = provider.GetRequiredService<EncryptService>();
-                            string encryptedIdsConnStr =encryptService.Decrypt_Aes( contextTenant.TenantInfo.EncryptedIdsConnectionString);
-                            realIdsConnStr = encryptedIdsConnStr;
-                        }
-
-                        if (string.IsNullOrEmpty(realIdsConnStr)) {
-                            builder.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                            return;
-                        }
-
-                        builder.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                        builder.UseDbConn(realIdsConnStr);
                     };
                 })
                 .AddOperationalStore(options => {
                     options.ResolveDbContextOptions = (provider, builder) => {
                         var contextTenant = provider.GetRequiredService<ContextTenant>();
+                        string realIdsConnStr = string.Empty;
                         if (contextTenant.TenantInfo == null) {
-                            builder.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                            return;
+                            realIdsConnStr = emptyConnectionString;
+                        } else {
+                            realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
+                            if (string.IsNullOrEmpty(realIdsConnStr) && !string.IsNullOrEmpty(contextTenant.TenantInfo.EncryptedIdsConnectionString)) {
+                                var encryptService = provider.GetRequiredService<EncryptService>();
+                                string encryptedIdsConnStr = encryptService.Decrypt_Aes(contextTenant.TenantInfo.EncryptedIdsConnectionString);
+                                realIdsConnStr = encryptedIdsConnStr;
+                            }
+
+                            if (string.IsNullOrEmpty(realIdsConnStr)) {
+                                realIdsConnStr = emptyConnectionString;
+                            }
+
                         }
 
-                        string realIdsConnStr = contextTenant.TenantInfo.ConnectionString;
-                        if (string.IsNullOrEmpty(realIdsConnStr)) {
-                            var encryptService = provider.GetRequiredService<EncryptService>();
-                            string encryptedIdsConnStr =encryptService.Decrypt_Aes( contextTenant.TenantInfo.EncryptedIdsConnectionString);
-                            realIdsConnStr = encryptedIdsConnStr;
-                        }
-
-                        if (string.IsNullOrEmpty(realIdsConnStr)) {
-                            builder.UseMySql(emptyConnectionString, MySqlServerVersion.AutoDetect(emptyConnectionString), sql => sql.MigrationsAssembly(migrationsAssembly));
-                            return;
-                        }
-
-                        builder.UseMySql(realIdsConnStr, MySqlServerVersion.AutoDetect(realIdsConnStr), sql => sql.MigrationsAssembly(migrationsAssembly));
+                        builder.UseDbConn(realIdsConnStr);
                     };
                 })
                 .AddAspNetIdentity<ApplicationUser>()
@@ -188,19 +200,32 @@ namespace IdentityServer.MultiTenant
                 options.DefaultPolicy = new AuthorizationPolicyBuilder("Bearer")
                 .RequireAuthenticatedUser().Build();
 
+                //options.AddPolicy("sysManagePolicy", builder => {
+
+                //    builder.AddAuthenticationSchemes("Bearer");
+                //    builder.RequireAuthenticatedUser();
+                //    builder.RequireClaim("aud", "idsmul");
+                //    builder.RequireScope("idsmul.manage");
+
+                //});
+
                 options.AddPolicy("sysManagePolicy", builder => {
-                    builder.AddAuthenticationSchemes("Bearer");
+
+                    //builder.AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme);
+                    builder.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme);
                     builder.RequireAuthenticatedUser();
-                    builder.RequireClaim("aud", "idsmul");
-                    builder.RequireScope("idsmul.manage");
+                    builder.RequireRole(MulTenantConstants.SysAdminRole);
+
                 });
 
                 options.AddPolicy("manageTenantPolicy", builder => {
                     builder.AddAuthenticationSchemes("Bearer");
                     builder.RequireAuthenticatedUser();
                     builder.RequireClaim("aud", "idsmul");
-                    builder.RequireScope("idsmul.addtenant");
+                    builder.RequireScope("idsmul.createtenant");
                 });
+
+
                 //("sysPolicy", builder => {
                 //    builder.AddAuthenticationSchemes("Bearer");
                 //    builder.RequireAuthenticatedUser();
@@ -209,14 +234,38 @@ namespace IdentityServer.MultiTenant
                 //});
             });
 
-            services.AddAuthentication("Bearer")
-                .AddIdentityServerAuthentication(options => {
+            services//.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+                .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                //.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, opts => {
+                //    opts.AccessDeniedPath = "/sys/Account/Login";
+                //    opts.Cookie.HttpOnly = true;
+                //    opts.LoginPath = "/sys/Account/Login";
+
+
+                //    opts.Cookie.Name = "sdfdss";
+                //    opts.Cookie.IsEssential = true;
+                //    opts.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None;
+                //    //opts.Cookie.Name=
+                //    //opts.Cookie.Name = IdentityServerConstants.DefaultCookieAuthenticationScheme;
+                //    //opts.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+                //    //opts.Cookie.SecurePolicy=Microsoft.AspNetCore.Http.CookieSecurePolicy.None;
+                //})
+                .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, opts => {
+                    opts.RequireHttpsMetadata = false;
                     string publishHost = Configuration.GetValue<string>("PublishHost");
                     int publishPort = Configuration.GetValue<int>("PublishPort");
-                    options.Authority = $"http://{publishHost}:{publishPort}";// "http://localhost:5000";
-                    options.RequireHttpsMetadata = false;
-                })
-                ;
+                    opts.Authority = $"http://{publishHost}:{publishPort}";// "http://localhost:5000";
+                    opts.Audience = "idsmul";
+                });
+
+            services.Configure<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme, options => {
+                options.AccessDeniedPath = "/sys/Account/Login";
+                options.Cookie.HttpOnly = true;
+                options.LoginPath = "/sys/Account/Login";
+               
+                options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None;
+                options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
+            });
 
             services.AddCors(options => {
                 options.AddPolicy("default", policy => {
@@ -236,7 +285,15 @@ namespace IdentityServer.MultiTenant
             });
             services.AddTransient<TenantRepository>();
             services.AddTransient<DbServerRepository>();
-            services.AddSingleton<DbOperaService>();
+            services.AddSingleton<MysqlDbOperaService>();
+            services.AddSingleton<SqliteDbOperaService>();
+            services.AddSingleton<ITenantDbOperation>(provider => { 
+                if(string.Compare(Configuration["SampleDb:DbType"], "mysql",true)==0) {
+                    return provider.GetRequiredService<MysqlDbOperaService>();
+                } else {
+                    return provider.GetRequiredService<SqliteDbOperaService>();
+                }
+            });
             services.AddSingleton<EncryptService>();
         }
 
@@ -248,7 +305,7 @@ namespace IdentityServer.MultiTenant
             }
 
             // uncomment if you want to add MVC
-            //app.UseStaticFiles();
+            app.UseStaticFiles();
             //app.UseRouting();
 
             app.UseRouting();
@@ -260,7 +317,9 @@ namespace IdentityServer.MultiTenant
 
             app.UseAuthorization();
             app.UseEndpoints(endpoints => {
-                endpoints.MapDefaultControllerRoute();
+                endpoints.MapControllerRoute("default", "api/{controller=Home}/{action=Index}");
+                //endpoints.MapControllerRoute("sys", "{__tenant__=}/{controller=Home}/{action=Index}");
+                //endpoints.MapDefaultControllerRoute();
             });
         }
     }

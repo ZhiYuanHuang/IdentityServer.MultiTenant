@@ -1,0 +1,175 @@
+﻿@*
+    For more information on enabling MVC for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
+*@
+
+@model List<IdentityServer4.EntityFramework.Entities.Client>
+@{
+    var mainDomainList = (List<IdentityServer.MultiTenant.Models.TenantDomainModel>)ViewData["MainDomainList"];
+}
+
+<partial name="./Index" />
+<br />
+<div>
+    <table class="main-table table table-bordered">
+        <thead>
+            <tr>
+                <th>ClientId</th>
+                <th>ClientName</th>
+                <th>Description</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var client in Model) {
+            <tr>
+
+                <td>@client.ClientId</td>
+                <td>@client.ClientName</td>
+                <td>@client.Description</td>
+                <td>
+                    <div>
+                        <input type="button" value="重置密码" class="btn btn-primary" onclick="@Html.Raw(String.Format("resetClientSecret('{0}')",client.ClientId))" />
+                        <input type="button" value="删除" class="btn btn-primary" onclick="@Html.Raw(String.Format("deleteClient('{0}')",client.ClientId))"/>
+                    </div>
+                </td>
+                <td hidden>@client.Id</td>
+            </tr>
+            }
+        </tbody>
+    </table>
+</div>
+<br />
+<br />
+<div>
+    <h2>添加Client</h2>
+    @*<p>使用 .needs-validation，它将在表单提交之后验证缺少的内容。这里需要添加一些 JavaScript 代码才能使代码正常工作。</p>
+        <p>可以点击提交按钮查看效果。</p>*@
+<form id="client_form" class="needs-validation" novalidate>
+    <div class="form-group">
+        <label for="maindomain">MainDomain:</label>
+        <select id="maindomain" name="maindomain" style="width: 150px;">
+            <option style='display: none'></option>
+            @foreach (var item in mainDomainList) {
+                <option value="@item.TenantDomain">@item.TenantDomain</option>
+            }
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="seconddomain">SecondDomain:</label>
+        <input type="text" class="form-control" id="seconddomain" placeholder="Enter seconddomain" name="seconddomain" required>
+    </div>
+    <div class="form-group">
+        <label for="clientid">ClientId:</label>
+        <input type="text" class="form-control" id="clientid" placeholder="Enter clientid" name="clientid" required>
+        <div class="valid-feedback">验证成功！</div>
+        <div class="invalid-feedback">请输入ClientId！</div>
+    </div>
+    <div class="form-group">
+        <label for="clientsecret">ClientSecret:</label>
+        <input type="password" class="form-control" id="clientsecret" placeholder="Enter clientsecret" name="clientsecret" required>
+        <div class="valid-feedback">验证成功！</div>
+        <div class="invalid-feedback">请输入ClientSecret！</div>
+    </div>
+    <div class="form-group">
+        <label for="clientname">ClientName:</label>
+        <input type="text" class="form-control" id="clientname" placeholder="Enter clientname" name="clientname" required>
+        <div class="valid-feedback">验证成功！</div>
+        <div class="invalid-feedback">请输入ClientName！</div>
+    </div>
+
+    <input type="button" class="btn btn-primary" value="提交" onclick="addOrUpdateClient()" />
+</form>
+</div>
+
+
+@section scripts
+{
+    @*<script src="~/js/sitecommon.js"></script>*@
+    <script>
+        function addOrUpdateClient() {
+            var jsonObj = {
+                "ClientInfo": {
+                    "ClientId": $('#clientid').val(),
+                    "ClientName": $('#clientname').val(),
+                    "ClientSecrets": [
+                        {
+                            "Value": $('#clientsecret').val(),
+                        }
+                    ]
+                },
+                "MainDomain": $('#maindomain').val(),
+                "SecondDomain": $('#seconddomain').val()
+                
+            };
+
+            $.ajax({
+                url: "/sys/api/client/addorupdate",
+                type: "post",
+                data: JSON.stringify(jsonObj),
+                contentType: "application/json",
+                dataType: "json",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        function resetClientSecret(clientIdValue) {
+
+            $.ajax({
+                url: "/sys/api/client/ResetSecret",
+                type: "post",
+                data: { clientId: clientIdValue },
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        alert(data.result);
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        function deleteClient(clientIdValue) {
+
+            $.ajax({
+                url: "/sys/api/client/Delete?clientId=" + clientIdValue,
+                type: "get",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        //alert(data.result);
+                        window.location.reload();
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert('删除失败');
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+        
+    </script>
+}

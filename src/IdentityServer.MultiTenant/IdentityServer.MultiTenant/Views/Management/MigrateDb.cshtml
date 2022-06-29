@@ -1,0 +1,105 @@
+﻿@*
+    For more information on enabling MVC for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
+*@
+@model IdentityServer.MultiTenant.Dto.TenantInfoDto
+@{
+    var dbServerList = (List<IdentityServer.MultiTenant.Models.DbServerModel>)ViewData["DbServerList"];
+    var originDbServer = (IdentityServer.MultiTenant.Models.DbServerModel)ViewData["OriginDbServer"];
+}
+
+<br />
+<div>
+    <h2>迁移Tenant</h2>
+    <div class="d-flex justify-content-between">
+        <div>
+            <form id="tenant_form" class="needs-validation" novalidate>
+                <div class="form-group">
+                    <label for="identifier">Identifier:</label>
+                    <input type="text" value="@Model.Identifier" readonly class="form-control" id="identifier" placeholder="Enter identifier" name="identifier" required>
+                </div>
+                <div class="form-group">
+                    <label for="tenantDomain">TenantDomain:</label>
+                    <input type="text" value="@Model.TenantDomain" readonly class="form-control" id="tenantdomain" placeholder="Enter tenantdomain" name="tenantdomain" required>
+
+                </div>
+                <div class="form-group">
+                    <label for="tenantname">TenantName:</label>
+                    <input type="text" value="@Model.Name" readonly class="form-control" id="tenantname" placeholder="Enter tenantname" name="tenantname" required>
+                </div>
+                <div class="form-group">
+                    <label for="description">Description:</label>
+                    <input type="text" value="@Model.Description" readonly class="form-control" id="description" placeholder="Enter description" name="description" required>
+                </div>
+
+            </form>
+        </div>
+        <div>
+            <form id="tenant_form" class="needs-validation" novalidate>
+                <div class="form-group">
+                    <label for="origindbserver">Origin Db Server:</label>
+                    <input type="text" value="@(originDbServer.ServerHost+":"+originDbServer.ServerPort+"   "+ViewData["OriginDbName"])" readonly class="form-control" id="origindbserver" placeholder="Enter origindbserver" name="origindbserver" required>
+                </div>
+                <div class="form-group">
+                    <label for="tomigrateserver">To Migrate Db Server:</label>
+                    <select id="tomigrateserver" name="tomigrateserver" style="width: 200px;">
+                        <option style='display: none'></option>
+                        @foreach (var item in dbServerList) {
+                            <option value="@item.Id">@(item.ServerHost+":"+item.ServerPort)</option>
+                        }
+                    </select>
+                </div>
+
+                <input type="button" class="btn btn-primary" value="执行迁移" onclick="executeMigrate()" />
+            </form>
+        </div>
+
+    </div>
+    <div id="migratelogdiv"></div>
+    <div class="input-group">
+        <div class="input-group-prepend">
+            <span class="input-group-text">migrate log</span>
+        </div>
+        <textarea id="migratelogbox" class="form-control" aria-label="With textarea" readonly style="min-height: 400px; background-color: black;color:white"></textarea>
+    </div>
+
+</div>
+
+<!--@section scripts
+{-->
+    <!--<script>
+        function executeMigrate() {
+            var jsonObj = {
+                "Identifier": $('#identifier').val(),
+                "TenantDomain": $('#tenantdomain').val(),
+                "DbServerId": $('#tomigrateserver').val(),
+                
+            };
+
+            $.ajax({
+                url: "/sys/api/SysTenant/MigrateTenant",
+                type: "post",
+                data: JSON.stringify(jsonObj),
+                contentType: "application/json",
+                dataType: "json",
+                async: false,
+                success: function (data) {
+                    if (data.errorCode == 0) {
+                        window.location.reload();
+                        alert("迁移成功")；
+                    }
+                    else {
+                        console.log(data.errorMsg);
+                        alert(data.errorMsg);
+                    }
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
+        
+       
+    </script>
+}-->

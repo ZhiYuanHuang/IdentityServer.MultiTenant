@@ -1,0 +1,40 @@
+﻿@using System.Diagnostics
+
+@{
+    var version = FileVersionInfo.GetVersionInfo(typeof(IdentityServer.MultiTenant.Program).Assembly.Location).ProductVersion.Split('+').First();
+}
+
+<div class="welcome-page">
+    <h1>
+        <img src="~/icon.jpg">
+        Welcome to IdentityServer.MultiTenant
+        <small class="text-muted">(version @version)</small>
+    </h1>
+
+    <ul>
+        <li>
+            @*IdentityServer publishes a
+        <a href="~/.well-known/openid-configuration">discovery document</a>
+        where you can find metadata and links to all the endpoints, key material, etc.*@
+            多租户独立数据库模式的identityserver
+            <br />
+            基于IdentityServer4和Finbuckle.MultiTenant开发的支持多租户认证鉴权的identityserver站点
+            <br />
+            基于 Apache 2.0 开源协议进行开源<a href="https://github.com/ZhiYuanHuang/IdentityServer.MultiTenant/blob/main/LICENSE">License</a>
+        </li>
+        @*<li>
+            Click <a href="~/diagnostics">here</a> to see the claims for your current session.
+        </li>
+        <li>
+            Click <a href="~/grants">here</a> to manage your stored grants.
+        </li>*@
+        <li>
+            点击 <a href="~/sys/management">管理</a> 站点租户、行业域名、站点Client及数据库服务器池等
+        </li>
+        <li>
+            源码链接
+            <a href="https://github.com/ZhiYuanHuang/IdentityServer.MultiTenant">源码仓库</a>.@*,*@
+            @*and <a href="https://github.com/IdentityServer/IdentityServer4/tree/main/samples">ready to use samples</a>.*@
+        </li>
+    </ul>
+</div>

@@ -6,25 +6,37 @@ namespace IdentityServer.MultiTenant.Framework.Utils
 {
     public class DbUtil
     {
-        public MySqlDb Master { get; set; }
-        public MySqlDb Slave { get; set; }
+        public IDbFunc Master { get; set; }
+        public IDbFunc Slave { get; set; }
     }
 
     public static class DbUtilExtension
     {
         public static IServiceCollection AddDbUtil(this IServiceCollection services,Action<DbUtilOption> dbUtilOptionAction) {
             services.AddSingleton<DbUtilOption>();
+
             return services.AddSingleton<DbUtil>((provider) => {
                 var dbUtilOption=provider.GetService<DbUtilOption>();
                 dbUtilOptionAction(dbUtilOption);
 
-                var log= provider.GetRequiredService<ILogger<MySqlDb>>();
+                var loggerFactory= provider.GetRequiredService<ILoggerFactory>();
 
-                MySqlDb mastetDb = new MySqlDb(log,dbUtilOption.MasterConnStr);
-                log= provider.GetRequiredService<ILogger<MySqlDb>>();
-                MySqlDb slaveDb = new MySqlDb(log,dbUtilOption.SlaveConnStr);
+                IDbFunc masterDb = null;
+                IDbFunc slaveDb = null;
+                if (DbConnStrExtension.IsUseMysql(dbUtilOption.MasterConnStr)) {
+                    masterDb = new MySqlDb(loggerFactory,dbUtilOption.MasterConnStr);
+                } else {
+                    masterDb = new SqliteDb(loggerFactory,dbUtilOption.MasterConnStr);
+                }
+
+                if (DbConnStrExtension.IsUseMysql(dbUtilOption.SlaveConnStr)) {
+                    slaveDb = new MySqlDb(loggerFactory, dbUtilOption.SlaveConnStr);
+                } else {
+                    slaveDb = new SqliteDb(loggerFactory, dbUtilOption.SlaveConnStr);
+                }
+
                 return new DbUtil() { 
-                    Master=mastetDb,
+                    Master= masterDb,
                     Slave=slaveDb
                 };
             });
