@@ -80,7 +80,8 @@ namespace IdentityServer.MultiTenant.TenantStore
                     Identifier=tenantInfoDto.Identifier,
                     Name=tenantInfoDto.Name,
                     ConnectionString=tenantInfoDto.ConnectionString,
-                    EncryptedIdsConnectionString=tenantInfoDto.EncryptedIdsConnectionString
+                    EncryptedIdsConnectionString=tenantInfoDto.EncryptedIdsConnectionString,
+                    TenantDomain=tenantInfoDto.TenantDomain
                 };
 
                 cache.SetString(tenantCacheKey,Newtonsoft.Json.JsonConvert.SerializeObject(cachedTenantInfo));

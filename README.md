@@ -50,3 +50,21 @@
 5.迁移 tenant 数据库
 
 ![迁移 数据库](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/migrate.png)
+
+## postman 示例截图
+
+1. 租户 test1 用户获取token
+
+![租户 test1 用户获取token](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/tenant1Token.png)
+
+2. 租户 test2 用户获取token
+
+![租户 test2 用户获取token](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/tenant2Token.png)
+
+3. 使用租户 test1 用户的 token 访问租户 test1 的带验证接口，访问正常
+
+![使用租户 test1 用户的 token 访问租户 test1 的待验证接口，访问正常](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/tenant1Verify.png)
+
+4. 使用租户 test2 用户的 token 访问租户 test1 的带验证接口，访问返回未授权401
+
+![使用租户 test2 用户的 token 访问租户 test1 的待验证接口，访问返回未授权401](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/tenant2Verify.png)

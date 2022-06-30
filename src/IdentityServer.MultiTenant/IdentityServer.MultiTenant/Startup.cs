@@ -30,6 +30,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Logging;
 using System;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -84,7 +85,9 @@ namespace IdentityServer.MultiTenant
                 .WithPerTenantOptions<JwtBearerOptions>((o,tenantinfo)=> {
                     string publishHost = Configuration.GetValue<string>("PublishHost");
                     int publishPort = Configuration.GetValue<int>("PublishPort");
-                    o.Authority = $"http://{tenantinfo.Identifier}.{publishHost}:{publishPort}";// "http://localhost:5000";
+                    o.Authority = $"http://{tenantinfo.Identifier}.{tenantinfo.TenantDomain}:{publishPort}";// "http://localhost:5000";
+                    
+                    o.Audience= $"http://{tenantinfo.Identifier}.{tenantinfo.TenantDomain}:{publishPort}/resources";
                     o.RequireHttpsMetadata = false;
                 });
            
@@ -128,10 +131,9 @@ namespace IdentityServer.MultiTenant
 
                 options.Authentication.CookieSameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
 
-                string publishHost = Configuration.GetValue<string>("PublishHost");
-                int publishPort = Configuration.GetValue<int>("PublishPort");
-                options.IssuerUri = $"http://{publishHost}:{publishPort}";
-               
+                //string publishHost = Configuration.GetValue<string>("PublishHost");
+                //int publishPort = Configuration.GetValue<int>("PublishPort");
+                //options.IssuerUri = $"http://{publishHost}:{publishPort}";
             })
                 //.AddInMemoryIdentityResources(Config.IdentityResources)
                 //.AddInMemoryApiScopes(Config.ApiScopes)
@@ -196,6 +198,8 @@ namespace IdentityServer.MultiTenant
             // not recommended for production - you need to store your key material somewhere secure
             builder.AddDeveloperSigningCredential();
 
+            IdentityModelEventSource.ShowPII = true;
+
             services.AddAuthorization(options => {
                 options.DefaultPolicy = new AuthorizationPolicyBuilder("Bearer")
                 .RequireAuthenticatedUser().Build();
@@ -223,6 +227,11 @@ namespace IdentityServer.MultiTenant
                     builder.RequireAuthenticatedUser();
                     builder.RequireClaim("aud", "idsmul");
                     builder.RequireScope("idsmul.createtenant");
+                });
+
+                options.AddPolicy("tenantUserPolicy", builder => {
+                    builder.AddAuthenticationSchemes("Bearer");
+                    builder.RequireAuthenticatedUser();
                 });
 
 
@@ -255,7 +264,7 @@ namespace IdentityServer.MultiTenant
                     string publishHost = Configuration.GetValue<string>("PublishHost");
                     int publishPort = Configuration.GetValue<int>("PublishPort");
                     opts.Authority = $"http://{publishHost}:{publishPort}";// "http://localhost:5000";
-                    opts.Audience = "idsmul";
+                    opts.Audience = $"http://{publishHost}:{publishPort}/resources";
                 });
 
             services.Configure<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme, options => {
