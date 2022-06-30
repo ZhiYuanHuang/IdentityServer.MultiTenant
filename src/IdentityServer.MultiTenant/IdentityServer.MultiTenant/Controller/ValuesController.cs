@@ -23,7 +23,7 @@ namespace IdentityServer.MultiTenant.Controller
 
         }
         [HttpGet]
-        [Authorize(Policy = "manageTenantPolicy")] //(Policy  = "sysManagePolicy")
+        [Authorize(Policy = "tenantUserPolicy")] //(Policy  = "sysManagePolicy")manageTenantPolicy
         public AppResponseDto Get() {
            
             return new AppResponseDto() { ErrorCode=0,ErrorMsg= _contextTenant.TenantInfo.Name };

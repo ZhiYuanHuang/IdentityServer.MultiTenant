@@ -13,5 +13,6 @@ namespace IdentityServer.MultiTenant.Domain
         public string Name { get; set; }
         public string ConnectionString { get; set; }
         public string EncryptedIdsConnectionString { get; set; }
+        public string TenantDomain { get; set; }
     }
 }
