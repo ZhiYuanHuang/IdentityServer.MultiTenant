@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant.Controller
 {
-    [Route("api/[controller]/[action]")]
+    [Route("{__tenant__=}/api/[controller]/[action]")]
     [ApiController]
     public class TenantController : ControllerBase
     {
@@ -41,7 +41,7 @@ namespace IdentityServer.MultiTenant.Controller
 
             string tenantDomain = string.Empty;
 
-            var clientDomainClaim= Request.HttpContext.User.Claims.FirstOrDefault(x=>x.Type== MulTenantConstants.ClientDomainClaim);
+            var clientDomainClaim= Request.HttpContext.User.Claims.FirstOrDefault(x=>x.Type=="client_"+ MulTenantConstants.ClientDomainClaim);
             if (clientDomainClaim != null) {
                 tenantDomain = clientDomainClaim.Value;
             } else {
@@ -50,6 +50,11 @@ namespace IdentityServer.MultiTenant.Controller
                 int tmpEndIndex = requestHost.LastIndexOf(':');
                 tenantDomain = requestHost.Substring(tmpStartIndx + 1, tmpEndIndex - tmpStartIndx - 1);
             }
+
+            if (string.IsNullOrEmpty(tenantDomain)) {
+                return new AppResponseDto(false) {ErrorMsg="tenant domain cann't be empty" };
+            }
+            tenantInfoDto.TenantDomain = tenantDomain;
 
             bool isExist= _tenantRepo.ExistTenant(tenantDomain, tenantInfoDto.Identifier,out TenantInfoDto existedTenantInfo);
 

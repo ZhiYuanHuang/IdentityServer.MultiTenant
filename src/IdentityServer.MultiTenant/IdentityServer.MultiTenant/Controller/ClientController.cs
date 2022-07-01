@@ -95,8 +95,8 @@ namespace IdentityServer.MultiTenant.Controller
                     client.AllowedScopes = new List<IdentityServer4.EntityFramework.Entities.ClientScope>();
                 }
 
-                if(client.AllowedScopes.FirstOrDefault(x=>string.Compare( x.Scope,"idsmul.addtenant",true)==0)==null) {
-                    client.AllowedScopes.Add(new IdentityServer4.EntityFramework.Entities.ClientScope() { Scope= "idsmul.addtenant" });
+                if(client.AllowedScopes.FirstOrDefault(x=>string.Compare( x.Scope, "idsmul.createtenant", true)==0)==null) {
+                    client.AllowedScopes.Add(new IdentityServer4.EntityFramework.Entities.ClientScope() { Scope= "idsmul.createtenant" });
                 }
 
                 client.Claims = new List<IdentityServer4.EntityFramework.Entities.ClientClaim>() { new IdentityServer4.EntityFramework.Entities.ClientClaim() { Type= MulTenantConstants.ClientDomainClaim,Value= clientDomain } };
