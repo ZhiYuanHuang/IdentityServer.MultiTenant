@@ -68,3 +68,11 @@
 4. 使用租户 test2 用户的 token 访问租户 test1 的带验证接口，访问返回未授权401
 
 ![使用租户 test2 用户的 token 访问租户 test1 的待验证接口，访问返回未授权401](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/tenant2Verify.png)
+
+5. 系统 client 获取token
+
+![系统 client 获取token](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/clientGetToken.png)
+
+6. 系统 client 调用 api 接口创建租户
+
+![系统 client 调用 api 接口创建租户](https://raw.githubusercontent.com/ZhiYuanHuang/IdentityServer.MultiTenant/develop/snap/clientCreateTenant.png)

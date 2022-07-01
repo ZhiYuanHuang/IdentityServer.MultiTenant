@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +33,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Logging;
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 
@@ -76,6 +78,11 @@ namespace IdentityServer.MultiTenant
                                                                                           //.WithConfigurationStore()
                                                                                           //.WithStore
                 .WithRouteStrategy()
+                .WithBasePathStrategy(options =>
+                {
+                    // defaults to false for compatibility
+                    options.RebaseAspNetCorePathBase = true;
+                })
                 //.WithInMemoryStore(options => { 
                 //     options.IsCaseSensitive = true;
                 //    options.Tenants.Add(new ExtendTenantInfo { Id = System.Guid.NewGuid().ToString(), Identifier = "test1", Name = "testTenant1", EncryptedIdsConnectionString = emptyConnectionString });
@@ -85,9 +92,17 @@ namespace IdentityServer.MultiTenant
                 .WithPerTenantOptions<JwtBearerOptions>((o,tenantinfo)=> {
                     string publishHost = Configuration.GetValue<string>("PublishHost");
                     int publishPort = Configuration.GetValue<int>("PublishPort");
-                    o.Authority = $"http://{tenantinfo.Identifier}.{tenantinfo.TenantDomain}:{publishPort}";// "http://localhost:5000";
-                    
-                    o.Audience= $"http://{tenantinfo.Identifier}.{tenantinfo.TenantDomain}:{publishPort}/resources";
+
+                    if (string.Compare(tenantinfo.Identifier, MulTenantConstants.SysTenant, true) == 0 || MulTenantConstants.ManageTenantList.FirstOrDefault(x => string.Compare(x, tenantinfo.Identifier, true) == 0) != null) {
+                        o.Authority = $"http://{publishHost}:{publishPort}/{tenantinfo.Identifier}";// "http://localhost:5000";
+
+                        o.Audience = $"http://{publishHost}:{publishPort}/{tenantinfo.Identifier}/resources";
+                    } else {
+                        o.Authority = $"http://{tenantinfo.Identifier}.{tenantinfo.TenantDomain}:{publishPort}";// "http://localhost:5000";
+
+                        o.Audience = $"http://{tenantinfo.Identifier}.{tenantinfo.TenantDomain}:{publishPort}/resources";
+                    }
+                   
                     o.RequireHttpsMetadata = false;
                 });
            
@@ -131,6 +146,7 @@ namespace IdentityServer.MultiTenant
 
                 options.Authentication.CookieSameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
 
+                
                 //string publishHost = Configuration.GetValue<string>("PublishHost");
                 //int publishPort = Configuration.GetValue<int>("PublishPort");
                 //options.IssuerUri = $"http://{publishHost}:{publishPort}";
@@ -327,7 +343,6 @@ namespace IdentityServer.MultiTenant
             app.UseAuthorization();
             app.UseEndpoints(endpoints => {
                 endpoints.MapControllerRoute("default", "api/{controller=Home}/{action=Index}");
-                //endpoints.MapControllerRoute("sys", "{__tenant__=}/{controller=Home}/{action=Index}");
                 //endpoints.MapDefaultControllerRoute();
             });
         }
