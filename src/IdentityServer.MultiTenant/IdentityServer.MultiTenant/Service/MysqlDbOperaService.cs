@@ -32,6 +32,7 @@ namespace IdentityServer.MultiTenant.Service
         private string _backupDbDirPath;
 
         private const string _returnDbConnTempalte = "Database={0};Data Source={1};Port={2};User Id={3};Password={4};Charset=utf8mb4;";
+        private const string _tenantDbNameTemplate= "ids_{0}_{1}";
 
         private readonly EncryptService _encryptService;
 
@@ -425,6 +426,14 @@ namespace IdentityServer.MultiTenant.Service
 
         //    return result;
         //}
+
+        public void AttachDbConn(ref TenantInfoDto tenantInfoDto, DbServerModel dbServer) {
+            string tenantDbName = string.Format(_tenantDbNameTemplate,tenantInfoDto.TenantDomain,tenantInfoDto.Identifier);
+
+            string migratedDbConnStr = string.Format(_returnDbConnTempalte, tenantDbName, dbServer.ServerHost, dbServer.ServerPort, dbServer.UserName, dbServer.Userpwd);
+            tenantInfoDto.EncryptedIdsConnectionString = _encryptService.Encrypt_Aes(migratedDbConnStr);
+            tenantInfoDto.ConnectionString = null;
+        }
 
         public bool MigrateTenantDb(ref TenantInfoDto tenantInfoDto, DbServerModel originDbServer, DbServerModel dbServer, ref StringBuilder migrateLogBuilder, out string errMsg) {
 
@@ -1115,7 +1124,7 @@ namespace IdentityServer.MultiTenant.Service
                     break;
                 }
 
-                Thread.Sleep(1000);
+                Thread.Sleep(500);
             }
 
             return runNormal;

@@ -219,6 +219,57 @@ namespace IdentityServer.MultiTenant.Controller
             };
         }
 
+        [HttpPost]
+        public async Task<AppResponseDto> UpdateTenantConn([FromBody] TenantInfoDto tenantInfoDto) {
+            if (string.IsNullOrEmpty(tenantInfoDto.TenantDomain) || string.IsNullOrEmpty(tenantInfoDto.Identifier)) {
+                return new AppResponseDto(false) { ErrorMsg = "tenant can not be empty" };
+            }
+
+            Int64? toMigrateDbServerId = tenantInfoDto.DbServerId;
+            if (!toMigrateDbServerId.HasValue) {
+                return new AppResponseDto(false) { ErrorMsg = "migrate db server can not empty" };
+            }
+
+            bool isExist = _tenantRepo.ExistTenant(tenantInfoDto.TenantDomain, tenantInfoDto.Identifier, out TenantInfoDto existedTenantInfo);
+
+            if (!isExist) {
+                return new AppResponseDto(false) { ErrorMsg = "tenant not existed" };
+            }
+
+            var dbServerList = _dbServerRepository.GetDbServers(existedTenantInfo.DbServerId.Value);
+            DbServerModel originDbServer = null;
+            if (dbServerList.Any() && dbServerList[0].Id == existedTenantInfo.DbServerId.Value) {
+                originDbServer = dbServerList[0];
+            }
+
+            dbServerList = _dbServerRepository.GetDbServers(toMigrateDbServerId.Value);
+            if (!dbServerList.Any() || dbServerList[0].Id != toMigrateDbServerId.Value) {
+                return new AppResponseDto(false) { ErrorMsg = "can not found to migrate db server" };
+            }
+            var toMigratingDbServer = dbServerList[0];
+
+            if (string.IsNullOrEmpty(toMigratingDbServer.Userpwd) && !string.IsNullOrEmpty(toMigratingDbServer.EncryptUserpwd)) {
+                toMigratingDbServer.Userpwd = _encryptService.Decrypt_Aes(toMigratingDbServer.EncryptUserpwd);
+            }
+            var migrateDbConnResult = await MysqlDbOperaService.CheckConnectAndVersion(toMigratingDbServer);
+            if (!migrateDbConnResult.Item1) {
+                return new AppResponseDto(false) { ErrorMsg = "to migrate db can not connect" };
+            }
+
+            _dbServerRepository.AddDbCountByDbserver(originDbServer, false);
+            _dbServerRepository.AddDbCountByDbserver(toMigratingDbServer);
+
+            ((MysqlDbOperaService)_dbOperaService).AttachDbConn(ref existedTenantInfo,toMigratingDbServer);
+
+            if (!_tenantRepo.AttachDbServerToTenant(existedTenantInfo, toMigratingDbServer, out string errMsg)) {
+                return new AppResponseDto(false) { ErrorMsg = errMsg };
+            }
+
+            return new AppResponseDto() {
+
+            };
+        }
+
         [HttpGet]
         public async Task MigrateTenant([FromQuery]string TenantDomain,[FromQuery]string Identifier,[FromQuery]Int64? DbServerId) {
             var response = HttpContext.Response;
