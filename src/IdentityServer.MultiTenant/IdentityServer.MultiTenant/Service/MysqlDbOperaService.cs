@@ -995,7 +995,7 @@ namespace IdentityServer.MultiTenant.Service
                 p.StandardInput.WriteLine("exit");
             }
 
-            p.WaitForExit(1000 * 1);
+            p.WaitForExit(1000 * 30);
 
             migrateLogBuilder?.AppendLine();
             return runNormal;
