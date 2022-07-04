@@ -29,9 +29,8 @@ namespace IdentityServer.MultiTenant.Service
             if (string.IsNullOrEmpty(dbDirPath)) {
                 dbDirPath =System.IO.Path.Combine( hostingEnvironment.ContentRootPath,"Db");
             }
-            string sampleDbFileName = config["SampleDb:DbFileName"];
 
-            _sampleDb_dbFilePath = System.IO.Path.Combine(dbDirPath,sampleDbFileName);
+            _sampleDb_dbFilePath = System.IO.Path.Combine(dbDirPath, "ids_sample.db");
             _logger.LogInformation($"_sampleDb_dbFilePath:{_sampleDb_dbFilePath}");
 
             _tenantDb_dbFileDir = config["SampleDb:TenantDbDirPath"];

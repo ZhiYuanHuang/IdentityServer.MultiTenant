@@ -43,6 +43,9 @@
     <None Update="Db\empty.identityserver.db">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Db\ids_sample_dump.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Db\sys.identityserver.db">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
