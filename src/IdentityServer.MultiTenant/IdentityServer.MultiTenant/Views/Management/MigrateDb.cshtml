@@ -49,8 +49,12 @@
                     </select>
                 </div>
 
-                <input type="button" class="btn btn-primary" value="迁移数据库并更新链接" onclick="executeMigrate()" />
-                <input type="button" class="btn btn-primary" value="只更新数据库链接" onclick="executeUpdateConn()" />
+                <div class="form-group">
+                    <input type="button" class="btn btn-primary" value="迁移数据库并更新链接" onclick="executeMigrate()" />
+                </div>
+                <div class="form-group">
+                    <input type="button" class="btn btn-primary" value="只更新数据库链接" onclick="executeUpdateConn()" />
+                </div>
             </form>
         </div>
 
@@ -65,15 +69,17 @@
 
 </div>
 
+
+
 <!--@section scripts
 {-->
-    <!--<script>
+<!--<script>
         function executeMigrate() {
             var jsonObj = {
                 "Identifier": $('#identifier').val(),
                 "TenantDomain": $('#tenantdomain').val(),
                 "DbServerId": $('#tomigrateserver').val(),
-                
+
             };
 
             $.ajax({
@@ -100,7 +106,7 @@
             })
         }
 
-        
-       
+
+
     </script>
 }-->

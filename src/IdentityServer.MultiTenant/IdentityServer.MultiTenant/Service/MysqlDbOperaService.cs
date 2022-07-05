@@ -32,6 +32,7 @@ namespace IdentityServer.MultiTenant.Service
         private string _backupDbDirPath;
 
         private const string _returnDbConnTempalte = "Database={0};Data Source={1};Port={2};User Id={3};Password={4};Charset=utf8mb4;";
+        private const string _calcDbSizeTemplate = "select round(sum(data_length/1024/1024),2) as data from tables where table_schema='{0}';";
         private const string _tenantDbNameTemplate= "ids_{0}_{1}";
 
         private readonly EncryptService _encryptService;
@@ -474,7 +475,6 @@ namespace IdentityServer.MultiTenant.Service
             tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
             string originUserpwd = originDbConn.Substring(tmpIndex + 9, tmpEndIndex - tmpIndex - 9);
 
-
             bool result = false;
 
             _mutex.WaitOne();
@@ -569,6 +569,61 @@ namespace IdentityServer.MultiTenant.Service
                 migrateLogBuilder.AppendLine($"migrate tenant db {dbServer?.ServerHost} {originDbName} error");
             } finally {
                 _mutex.ReleaseMutex();
+            }
+
+            return result;
+        }
+
+        public static bool CalcDbSize(string originDbConn,out int dbSize) {
+            int tmpIndex = originDbConn.IndexOf("database=", StringComparison.OrdinalIgnoreCase);
+            int tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originDbName = originDbConn.Substring(tmpIndex + 9, tmpEndIndex - tmpIndex - 9);
+
+            tmpIndex = originDbConn.IndexOf("Data Source=", StringComparison.OrdinalIgnoreCase);
+            tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originHost = originDbConn.Substring(tmpIndex + 12, tmpEndIndex - tmpIndex - 12);
+
+            tmpIndex = originDbConn.IndexOf("Port=", StringComparison.OrdinalIgnoreCase);
+            tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originPort = originDbConn.Substring(tmpIndex + 5, tmpEndIndex - tmpIndex - 5);
+
+            tmpIndex = originDbConn.IndexOf("User Id=", StringComparison.OrdinalIgnoreCase);
+            tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originUserName = originDbConn.Substring(tmpIndex + 8, tmpEndIndex - tmpIndex - 8);
+
+            tmpIndex = originDbConn.IndexOf("Password=", StringComparison.OrdinalIgnoreCase);
+            tmpEndIndex = originDbConn.IndexOf(';', tmpIndex);
+            string originUserpwd = originDbConn.Substring(tmpIndex + 9, tmpEndIndex - tmpIndex - 9);
+
+           // "Database={0};Data Source={1};Port={2};User Id={3};Password={4};Charset=utf8mb4;";
+            string info_conn = string.Format(_returnDbConnTempalte, "information_schema",originHost,originPort,originUserName,originUserpwd);
+            MySqlConnection mySqlConnection = new MySqlConnection(info_conn);
+
+            dbSize = 0;
+            bool result = false;
+            try {
+                mySqlConnection.Open();
+
+                string sql = string.Format(_calcDbSizeTemplate,originDbName);
+
+                MySqlCommand cmd = new MySqlCommand();
+                cmd.Connection = mySqlConnection;
+                cmd.CommandType = System.Data.CommandType.Text;
+                cmd.CommandText = sql;
+                cmd.CommandTimeout = 10;
+
+                object ret = cmd.ExecuteScalar();
+
+                if (ret != null) {
+                   
+                    dbSize= ConvertUtil.ToInt(ret,0);
+                    result = true;
+                }
+
+            } catch (Exception ex) {
+                result = false;
+            } finally {
+                mySqlConnection?.Dispose();
             }
 
             return result;
@@ -756,7 +811,6 @@ namespace IdentityServer.MultiTenant.Service
                 return new Tuple<bool, string>(false,string.Empty);
             }
 
-            //"Data Source=127.0.0.1;Port=13306;User Id=devuser;Password=devpwd;Charset=utf8;",
             var connection = new MySqlConnection(connStr);
             string version= string.Empty;
             bool result = false;
@@ -995,7 +1049,7 @@ namespace IdentityServer.MultiTenant.Service
                 p.StandardInput.WriteLine("exit");
             }
 
-            p.WaitForExit(1000 * 30);
+            p.WaitForExit(1000 * 60*10);
 
             migrateLogBuilder?.AppendLine();
             return runNormal;

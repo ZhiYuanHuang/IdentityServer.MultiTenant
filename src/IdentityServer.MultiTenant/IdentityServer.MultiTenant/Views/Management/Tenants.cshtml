@@ -10,13 +10,13 @@
 <br />
 <div id="migratetenant" name="migratetenant"></div>
 <div>
-    <div  class="d-flex justify-content-between">
+    <div class="d-flex justify-content-between">
         <div></div>
         <div>
             <select id="select_tenantdomain" name="select_tenantdomain" onchange="@Html.Raw(String.Format("selectDomain(this.options[this.options.selectedIndex].value)"))" style="width: 150px;">
                 <option style='display: none'></option>
                 @foreach (var item in Model.TenantDomainList) {
-                    if (string.Compare(item.TenantDomain, Model.SelectTenantDomain,true) == 0) {
+                    if (string.Compare(item.TenantDomain, Model.SelectTenantDomain, true) == 0) {
                         <option selected="selected" value="@item.TenantDomain">@item.TenantDomain</option>
                     } else {
                         <option value="@item.TenantDomain">@item.TenantDomain</option>
@@ -46,30 +46,31 @@
                         <td>@tenantInfo.TenantDomain</td>
                         <td>@tenantInfo.Name</td>
                         <td>@tenantInfo.GuidId</td>
-                        <td>@if (tenantInfo.DbServerId != null && dbServerDict.ContainsKey(tenantInfo.DbServerId.Value)) {
+                        <td>
+                            @if (tenantInfo.DbServerId != null && dbServerDict.ContainsKey(tenantInfo.DbServerId.Value)) {
                                 <span>@dbServerDict[tenantInfo.DbServerId.Value]</span>
                             }
-                        </td>
-                        <td>
-                            <span>@(tenantInfo.ConnectSuccess?"连接成功":"连接失败")</span>
-                        </td>
-                        <td>
-                            <div class="row">
-                                <div class="switch" data-on-label="SI" data-off-label="NO" style="margin-left:10px;margin-right:10px">
-                                    <input type="checkbox" @(tenantInfo.EnableStatus == 1 ? "checked" : "") onchange="@Html.Raw(String.Format("changeStatus('{0}','{1}')",tenantInfo.TenantDomain,tenantInfo.Identifier))" />
-                                </div>
-                                <div>
-                                    <input type="button" value="删除" class="btn btn-primary" style="margin-right:10px" onclick="@Html.Raw(String.Format("deleteTenant('{0}','{1}')",tenantInfo.TenantDomain,tenantInfo.Identifier))" />
-                                </div>
-                                <div>
-                                    @*onclick="@Html.Raw(String.Format("migrateDb('{0}','{1}')", tenantInfo.TenantDomain, tenantInfo.Identifier))"*@
-                                    <input type="button" data-toggle="tooltip" data-placement="bottom" title="only origin mysql" value="迁移mysql" class="btn btn-primary" @(tenantInfo.UseMysql ? "" : "disabled") 
-                                           onclick="@Html.Raw(String.Format("migrateDb('{0}','{1}')", tenantInfo.TenantDomain, tenantInfo.Identifier))"/>
-                                </div>
+                    </td>
+                    <td>
+                        <span>@(tenantInfo.ConnectSuccess.HasValue?(tenantInfo.ConnectSuccess.Value?"连接成功":"连接失败"):"未知")</span>
+                    </td>
+                    <td>
+                        <div class="row">
+                            <div class="switch" data-on-label="SI" data-off-label="NO" style="margin-left:10px;margin-right:10px">
+                                <input type="checkbox" @(tenantInfo.EnableStatus == 1 ? "checked" : "") onchange="@Html.Raw(String.Format("changeStatus('{0}','{1}')",tenantInfo.TenantDomain,tenantInfo.Identifier))" />
                             </div>
-                        </td>
-                    </tr>
-                }
+                            <div>
+                                <input type="button" value="删除" class="btn btn-primary" style="margin-right:10px" onclick="@Html.Raw(String.Format("deleteTenant('{0}','{1}')",tenantInfo.TenantDomain,tenantInfo.Identifier))" />
+                            </div>
+                            <div>
+                                @*onclick="@Html.Raw(String.Format("migrateDb('{0}','{1}')", tenantInfo.TenantDomain, tenantInfo.Identifier))"*@
+                                <input type="button" data-toggle="tooltip" data-placement="bottom" title="only origin mysql" value="迁移mysql" class="btn btn-primary" @(tenantInfo.UseMysql ? "" : "disabled")
+                                       onclick="@Html.Raw(String.Format("migrateDb('{0}','{1}')", tenantInfo.TenantDomain, tenantInfo.Identifier))" />
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            }
             </tbody>
         </table>
     </div>
@@ -110,7 +111,35 @@
     </form>
 </div>
 
-@section scripts{ 
+<div class="modal fade" id="myModal" data-backdrop="static" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+                <h4 class="modal-title" id="myModalLabel">警告</h4>
+            </div>
+            <div class="modal-body">
+                <form>
+                    <div class="form-group">
+                        <textarea  class="form-control" type="text" id="migratealert" readonly></textarea>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" readonly id="migratetoken" hidden />
+                    </div>
+                </form>
+            </div>
+        
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal" onclick="@Html.Raw(String.Format("commitMigrate(false)"))">取消</button>
+                <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="@Html.Raw(String.Format("commitMigrate(true)"))">继续</button>
+            </div>
+            </div><!-- /.modal-content -->
+    </div><!-- /.modal-dialog -->
+</div>
+
+
+
+@section scripts{
     <script src="https://cdn.socket.io/socket.io-1.2.0.js"></script>
     <script>
         function selectDomain(tenantDomain) {
@@ -131,6 +160,30 @@
             xhr.send(null);
         }
 
+        function commitMigrate(isContinue) {
+            var theMigrateToken = $('#migratetoken').val();
+
+            $.ajax({
+                url: "/sys/api/SysTenant/DecideMigration?migrationToken=" + theMigrateToken + "&isContinue=" + isContinue,
+                type: "get",
+                async: false,
+                success: function (data) {
+
+                    //if (data.errorCode == 0) {
+                    //    window.location.reload();
+                    //}
+                    //else {
+                    //    console.log(data.errorMsg);
+                    //    alert(data.errorMsg);
+                    //}
+                },
+                error: function (e) {
+                    console.log(e.error);
+                    alert(e);
+                }
+            })
+        }
+
         function executeMigrate(node) {
             var tenantDomain = $('#tenantdomain').val();
             var identifier = $('#identifier').val();
@@ -142,12 +195,16 @@
                 document.getElementById('migratelogbox').scrollTop = document.getElementById('migratelogbox').scrollHeight;
             }
 
-            var iframeUrl = "/sys/api/SysTenant/MigrateTenant?TenantDomain=" + tenantDomain + "&Identifier=" + identifier + "&DbServerId="+dbServerId;
+            window.execFunc = function (codeStr) {
+                eval(codeStr);
+            }
 
-            $('#migratelogdiv').append('<iframe style="display:none" src="'+iframeUrl+'"></iframe>');
+            var iframeUrl = "/sys/api/SysTenant/MigrateTenant?TenantDomain=" + tenantDomain + "&Identifier=" + identifier + "&DbServerId=" + dbServerId;
+
+            $('#migratelogdiv').append('<iframe style="display:none" src="' + iframeUrl + '"></iframe>');
         }
 
-        function executeUpdateConn(){
+        function executeUpdateConn() {
             var tenantDomain = $('#tenantdomain').val();
             var identifier = $('#identifier').val();
             var dbServerId = parseInt($('#tomigrateserver').val());

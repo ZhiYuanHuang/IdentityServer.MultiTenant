@@ -8,6 +8,6 @@ namespace IdentityServer.MultiTenant.Dto
 {
     public class DbServerDto:DbServerModel
     {
-        public bool ConnectSuccess { get; set; }
+        public bool? ConnectSuccess { get; set; }
     }
 }
