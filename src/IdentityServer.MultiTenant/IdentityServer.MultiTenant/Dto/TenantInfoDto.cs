@@ -10,7 +10,7 @@ namespace IdentityServer.MultiTenant.Dto
     {
         public string TenantDomain { get; set; }
         public int DomainEnableStatus { get; set; }
-        public bool ConnectSuccess { get; set; }
+        public bool? ConnectSuccess { get; set; }
         public Int64? DbServerId { get; set; }
         public bool UseMysql { get; set; }
     }

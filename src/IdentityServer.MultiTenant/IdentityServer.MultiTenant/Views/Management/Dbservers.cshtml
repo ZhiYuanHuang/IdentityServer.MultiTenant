@@ -26,7 +26,7 @@
                     <td>@dbServer.ServerHost</td>
                     <td>@dbServer.ServerPort</td>
                     <td>
-                       <span>@(dbServer.ConnectSuccess?"连接成功":"连接失败")</span> 
+                       <span>@(dbServer.ConnectSuccess.HasValue?(dbServer.ConnectSuccess.Value?"连接成功":"连接失败"):"未知")</span> 
                     </td>
                     <td>
                         <div class="row">

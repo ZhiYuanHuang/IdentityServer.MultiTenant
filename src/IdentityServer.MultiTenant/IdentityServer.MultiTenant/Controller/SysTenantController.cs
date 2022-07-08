@@ -7,11 +7,13 @@ using IdentityServer.MultiTenant.Service;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace IdentityServer.MultiTenant.Controller
@@ -26,8 +28,11 @@ namespace IdentityServer.MultiTenant.Controller
         private readonly ITenantDbOperation _dbOperaService;
         private readonly EncryptService _encryptService;
         private readonly DbServerRepository _dbServerRepository;
+        private readonly IDistributedCache _cache;
         public SysTenantController(EncryptService encryptService, ITenantDbOperation dbOperaService, TenantRepository tenantRepo, ILogger<SysTenantController> logger,
-            DbServerRepository dbServerRepository) {
+            DbServerRepository dbServerRepository,
+            IDistributedCache cache) {
+            _cache = cache;
             _dbOperaService = dbOperaService;
             _tenantRepo = tenantRepo;
             _logger = logger;
@@ -219,6 +224,71 @@ namespace IdentityServer.MultiTenant.Controller
             };
         }
 
+        [HttpPost]
+        public async Task<AppResponseDto> UpdateTenantConn([FromBody] TenantInfoDto tenantInfoDto) {
+            if (string.IsNullOrEmpty(tenantInfoDto.TenantDomain) || string.IsNullOrEmpty(tenantInfoDto.Identifier)) {
+                return new AppResponseDto(false) { ErrorMsg = "tenant can not be empty" };
+            }
+
+            Int64? toMigrateDbServerId = tenantInfoDto.DbServerId;
+            if (!toMigrateDbServerId.HasValue) {
+                return new AppResponseDto(false) { ErrorMsg = "migrate db server can not empty" };
+            }
+
+            bool isExist = _tenantRepo.ExistTenant(tenantInfoDto.TenantDomain, tenantInfoDto.Identifier, out TenantInfoDto existedTenantInfo);
+
+            if (!isExist) {
+                return new AppResponseDto(false) { ErrorMsg = "tenant not existed" };
+            }
+
+            var dbServerList = _dbServerRepository.GetDbServers(existedTenantInfo.DbServerId.Value);
+            DbServerModel originDbServer = null;
+            if (dbServerList.Any() && dbServerList[0].Id == existedTenantInfo.DbServerId.Value) {
+                originDbServer = dbServerList[0];
+            }
+
+            dbServerList = _dbServerRepository.GetDbServers(toMigrateDbServerId.Value);
+            if (!dbServerList.Any() || dbServerList[0].Id != toMigrateDbServerId.Value) {
+                return new AppResponseDto(false) { ErrorMsg = "can not found to migrate db server" };
+            }
+            var toMigratingDbServer = dbServerList[0];
+
+            if (string.IsNullOrEmpty(toMigratingDbServer.Userpwd) && !string.IsNullOrEmpty(toMigratingDbServer.EncryptUserpwd)) {
+                toMigratingDbServer.Userpwd = _encryptService.Decrypt_Aes(toMigratingDbServer.EncryptUserpwd);
+            }
+            var migrateDbConnResult = await MysqlDbOperaService.CheckConnectAndVersion(toMigratingDbServer);
+            if (!migrateDbConnResult.Item1) {
+                return new AppResponseDto(false) { ErrorMsg = "to migrate db can not connect" };
+            }
+
+            _dbServerRepository.AddDbCountByDbserver(originDbServer, false);
+            _dbServerRepository.AddDbCountByDbserver(toMigratingDbServer);
+
+            ((MysqlDbOperaService)_dbOperaService).AttachDbConn(ref existedTenantInfo,toMigratingDbServer);
+
+            if (!_tenantRepo.AttachDbServerToTenant(existedTenantInfo, toMigratingDbServer, out string errMsg)) {
+                return new AppResponseDto(false) { ErrorMsg = errMsg };
+            }
+
+            return new AppResponseDto() {
+
+            };
+        }
+
+        [HttpGet]
+        public async Task DecideMigration([FromQuery] string migrationToken, [FromQuery]bool isContinue) {
+            string cacheKey = $"migration_{migrationToken}";
+            string cacheValue= await _cache.GetStringAsync(cacheKey);
+            if (!string.IsNullOrEmpty(cacheValue) && cacheValue=="0") {
+                
+                if (isContinue) {
+                    _cache.SetStringAsync(cacheKey,"1");
+                } else {
+                    _cache.SetStringAsync(cacheKey,"2");
+                }
+            }
+        }
+
         [HttpGet]
         public async Task MigrateTenant([FromQuery]string TenantDomain,[FromQuery]string Identifier,[FromQuery]Int64? DbServerId) {
             var response = HttpContext.Response;
@@ -285,6 +355,63 @@ namespace IdentityServer.MultiTenant.Controller
                 await response.CompleteAsync();
                 return;
             }
+            if (MysqlDbOperaService.CalcDbSize(originDbConn, out int dbSize)) {
+                if (dbSize >= 1024) {
+                    string migrationToken = Guid.NewGuid().ToString("N");
+                    string cacheKey = $"migration_{migrationToken}";
+                    _cache.SetStringAsync(cacheKey,"0",new DistributedCacheEntryOptions() { AbsoluteExpiration=DateTimeOffset.UtcNow.AddSeconds(60)});
+                   
+                    //modal
+                    string js = string.Format(_scriptFuncTemplate, System.Web.HttpUtility.JavaScriptStringEncode(string.Format(@"
+$('#migratealert').val('{0}');
+$('#migratetoken').val('{1}');
+$('#myModal').modal();
+", System.Web.HttpUtility.JavaScriptStringEncode($"数据库大小超过{dbSize}MB,请选择继续自动迁移或手动迁移数据库后再单独更新链接"), System.Web.HttpUtility.JavaScriptStringEncode( migrationToken))));
+                    await response.WriteAsync(getScriptResp2(js));
+                    await response.Body.FlushAsync();
+
+                    bool isContinue = false;
+                    while (true) {
+                        string cacheValue = await _cache.GetStringAsync(cacheKey);
+                        if (string.IsNullOrEmpty(cacheValue)) {    //timeout
+                            await response.WriteAsync(getScriptResp("Timeout cancel!\n"));
+
+                            await response.Body.FlushAsync();
+                            _cache.RemoveAsync(cacheKey);
+
+                            break;
+                        }else if (cacheValue == "0") {
+
+                        }
+                        else if (cacheValue == "1") {
+                            isContinue = true;
+                            await response.WriteAsync(getScriptResp("continue...!\n"));
+
+                            await response.Body.FlushAsync();
+                            _cache.RemoveAsync(cacheKey);
+
+                            break;
+                        } else if (cacheValue == "2") {
+                            await response.WriteAsync(getScriptResp("cancel...!\n"));
+
+                            await response.Body.FlushAsync();
+                            _cache.RemoveAsync(cacheKey);
+
+                            break;
+                        }
+
+                        Thread.Sleep(100);
+                    }
+
+                    if (!isContinue) {
+                        await response.CompleteAsync();
+                        return;
+                    }
+
+                }
+            }
+
+            
             string originVersion = DbConnStrExtension.GetMysqlGeneralVersion(originDbConnResult.Item2);
 
             existedTenantInfo.ConnectionString = originDbConn;
@@ -385,12 +512,20 @@ namespace IdentityServer.MultiTenant.Controller
 
         private const string _scriptMsgTemplate = "<script> top.read('{0}') </script>";
         private const string _scriptResultTemplate = "<script> alert('{0}') </script>";
+        private const string _scriptFuncTemplate = "<script> top.execFunc('{0}') </script>";
         private static string getScriptResp(string msg,bool? result = null) {
             StringBuilder builder = new StringBuilder();
             builder.AppendLine(string.Format(_scriptMsgTemplate, System.Web.HttpUtility.JavaScriptStringEncode(msg)));
             if (result.HasValue) {
                 builder.AppendLine(string.Format(_scriptResultTemplate, result.Value?"迁移正常":"迁移异常"));
             }
+            return builder.ToString();
+        }
+
+        private static string getScriptResp2(string js) {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine(js);
+            
             return builder.ToString();
         }
     }

@@ -72,6 +72,10 @@ namespace IdentityServer.MultiTenant.Quickstart
             if (dbServerList.Any()) {
                 List<Task> checkTaskList = new List<Task>();
                 foreach( var keyValue in dict) {
+                    if (keyValue.Key.EnableStatus != (int)EnableStatusEnum.Enable) {
+                        continue;
+                    }
+
                     var task= Task.Factory.StartNew( (keyValueObj) => {
                         KeyValuePair<DbServerModel, DbServerDto> tmpKeyValue = (KeyValuePair<DbServerModel, DbServerDto>)keyValueObj;
 
@@ -105,7 +109,7 @@ namespace IdentityServer.MultiTenant.Quickstart
             if (tenantList.Any()) {
                 List<Task> taskList = new List<Task>();
                 foreach (var tenant in tenantList) {
-
+                    
                     var task = Task.Factory.StartNew((tenantInfoObj)=> {
                         TenantInfoDto tmpTenant = tenantInfoObj as TenantInfoDto;
                         string connStr = tmpTenant.ConnectionString;
@@ -115,7 +119,9 @@ namespace IdentityServer.MultiTenant.Quickstart
 
                         tmpTenant.UseMysql = _useMysql && DbConnStrExtension.IsUseMysql(connStr);
 
-                        tmpTenant.ConnectSuccess = _tenantDbOperation.CheckConnect(connStr).Result;
+                        if (tmpTenant.EnableStatus == (int)EnableStatusEnum.Enable) {
+                            tmpTenant.ConnectSuccess = _tenantDbOperation.CheckConnect(connStr).Result;
+                        }
                     },tenant);
                     taskList.Add(task);
                 }
